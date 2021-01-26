@@ -195,6 +195,16 @@ be found at https://github.com/verata-veritatis/pybit/blob/master/docs/HTTP.md a
 | Server Time        | `server_time()`  |
 | Announcement       | `announcement()`  |
 
+### pybit Custom Endpoints
+
+| Endpoint                          | Method |
+| -------------                     | ------------- |
+| Place Active Order (Bulk)         | `place_active_order_bulk()`  |
+| Cancel Active Order (Bulk)        | `cancel_active_order_bulk()`  |
+| Place Conditional Order (Bulk)    | `place_conditional_order_bulk()`  |
+| Cancel Conditional Order (Bulk)   | `cancel_conditional_order_bulk()`  |
+| Close Position                    | `close_position()` |
+
 ### WebSocket
 
 #### Public Topics
