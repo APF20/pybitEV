@@ -271,6 +271,58 @@ class HTTP:
             query=kwargs
         )
 
+    def query_index_price_kline(self, **kwargs):
+        """
+        Query index price kline. Index price kline. Tracks BTC spot prices,
+        with a frequency of every second.
+
+        :param kwargs: See
+            https://bybit-exchange.github.io/docs/inverse/#t-queryindexpricekline.
+        :returns: Request results as dictionary.
+        """
+
+        # Replace query param 'from_time' since 'from' keyword is reserved.
+        # Temporary workaround until Bybit updates official request params
+        if 'from_time' in kwargs:
+            kwargs['from'] = kwargs.pop('from_time')
+
+        if 'symbol' in kwargs and 'USDT' in kwargs['symbol']:
+            suffix = '/public/linear/index-price-kline'
+        else:
+            suffix = '/v2/public/index-price-kline'
+ 
+        return self._submit_request(
+            method='GET',
+            path=self.endpoint + suffix,
+            query=kwargs
+        )
+
+    def query_premium_index_kline(self, **kwargs):
+        """
+        Query premium index kline. Tracks the premium / discount of BTC
+        perpetual contracts relative to the mark price per minute
+
+        :param kwargs: See
+            https://bybit-exchange.github.io/docs/inverse/#t-querypremiumindexkline.
+        :returns: Request results as dictionary.
+        """
+
+        # Replace query param 'from_time' since 'from' keyword is reserved.
+        # Temporary workaround until Bybit updates official request params
+        if 'from_time' in kwargs:
+            kwargs['from'] = kwargs.pop('from_time')
+
+        if 'symbol' in kwargs and 'USDT' in kwargs['symbol']:
+            suffix = '/public/linear/premium-index-kline'
+        else:
+            suffix = '/v2/public/premium-index-kline'
+
+        return self._submit_request(
+            method='GET',
+            path=self.endpoint + suffix,
+            query=kwargs
+        )
+
     def open_interest(self, **kwargs):
         """
         Gets the total amount of unsettled contracts. In other words, the total
@@ -969,7 +1021,7 @@ class HTTP:
         if 'symbol' in kwargs and 'USDT' in kwargs['symbol']:
             suffix = '/public/linear/funding/prev-funding-rate'
         else:
-            suffix = '/v2/private/funding/prev-funding-rate'
+            suffix = '/v2/public/funding/prev-funding-rate'
 
         return self._submit_request(
             method='GET',
