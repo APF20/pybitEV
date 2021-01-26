@@ -1723,8 +1723,8 @@ class WebSocket:
 
             topic = msg_json['topic']
 
-            # If incoming 'orderbookL2' data.
-            if 'orderBookL2' in topic:
+            # For incoming 'orderbookL2_25.x.x' and 'orderBook_200.x.x' data.
+            if any(i in topic for i in {'orderBookL2_25', 'orderBook_200'}):
 
                 # Make updates according to delta response.
                 if 'delta' in msg_json['type']:
@@ -1748,7 +1748,7 @@ class WebSocket:
                     self.data[topic] = msg_json['data']['order_book']
 
             # For incoming 'order' and 'stop_order' data.
-            elif any(i in topic for i in ['order', 'stop_order']):
+            elif topic in {'order', 'stop_order'}:
 
                 # record incoming data  
                 for i in msg_json['data']:
@@ -1765,8 +1765,8 @@ class WebSocket:
                         except AttributeError:
                             self.data[topic] = msg_json['data']
 
-            # For incoming 'trade' and 'execution' data.
-            elif any(i in topic for i in ['trade', 'execution']):
+            # For incoming 'trade.x' and 'execution' data.
+            elif any(i in topic for i in {'trade', 'execution'}):
 
                 # Keep appending or create new list if not already created.
                 try:
@@ -1779,27 +1779,29 @@ class WebSocket:
                 if len(self.data[topic]) > self.max_length:
                     self.data[topic].pop(0)
 
-            # If incoming 'insurance', 'klineV2', or 'wallet' data.
-            elif any(i in topic for i in ['insurance', 'klineV2', 'wallet',
-                                          'candle']):
+            # For incoming 'insurance.x', 'klineV2.x.x', 'candle.x.x'
+            # or 'wallet' data.
+            elif any(i in topic for i in {'insurance', 'klineV2', 'wallet',
+                                          'candle'}):
 
                 # Record incoming data.
                 self.data[topic] = msg_json['data'][0]
 
-            # If incoming 'instrument_info' data.
+            # If incoming 'instrument_info.x.x' data.
             elif 'instrument_info' in topic:
 
                 # Make updates according to delta response.
                 if 'delta' in msg_json['type']:
-                    for i in msg_json['data']['update'][0]:
-                        self.data[topic][i] = msg_json['data']['update'][0][i]
+                    self.data[topic] = {
+                        **self.data[topic], **msg_json['data']['update'][0]
+                }
 
                 # Record the initial snapshot.
                 elif 'snapshot' in msg_json['type']:
                     self.data[topic] = msg_json['data']
 
             # If incoming 'position' data.
-            elif 'position' in topic:
+            elif topic == 'position':
 
                 # Record incoming position data.
                 for p in msg_json['data']:
