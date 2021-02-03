@@ -6,10 +6,11 @@ class FailedRequestError(Exception):
         message -- Explanation of the error.
         status_code -- The code number returned.
     """
-    def __init__(self, message, status_code):
+    def __init__(self, message, status_code, time):
         self.message = message
         self.status_code = status_code
-        super().__init__(self.message)
+        self.time = time
+        super().__init__(f'Error: {message} (ErrCode: {status_code}) (ErrTime: {time} UTC)')
 
 
 class InvalidRequestError(Exception):
@@ -20,7 +21,8 @@ class InvalidRequestError(Exception):
         message -- Explanation of the error.
         status_code -- The code number returned.
     """
-    def __init__(self, message, status_code):
+    def __init__(self, message, status_code, time):
         self.message = message
         self.status_code = status_code
-        super().__init__(self.message)
+        self.time = time
+        super().__init__(f'Error: {message} (ErrCode: {status_code}) (ErrTime: {time} UTC)')
