@@ -1014,9 +1014,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
+        if 'symbol' in kwargs and 'USDT' in kwargs['symbol']:
+            suffix = '/private/linear/position/set-risk'
+        else:
+            suffix = '/open-api/wallet/risk-limit'
+
         return self._submit_request(
             method='POST',
-            path=self.endpoint + '/open-api/wallet/risk-limit',
+            path=self.endpoint + suffix,
             query=kwargs,
             auth=True
         )
