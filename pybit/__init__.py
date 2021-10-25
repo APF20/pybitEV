@@ -71,8 +71,11 @@ class HTTP:
     :param force_retry: Whether or not pybit should retry a timed-out request.
     :type force_retry: bool
 
-    :param retry_codes: A whitelist set of non-fatal retry codes to retry on.
+    :param retry_codes: A list of non-fatal status codes to retry on.
     :type retry_codes: set
+
+    :param ignore_codes: A list of non-fatal status codes to ignore.
+    :type ignore_codes: set
 
     :param max_retries: The number of times to re-attempt a request.
     :type max_retries: int
@@ -92,8 +95,8 @@ class HTTP:
     def __init__(self, endpoint=None, api_key=None, api_secret=None,
                  logging_level=logging.INFO, log_requests=False,
                  request_timeout=10, recv_window=5000, force_retry=False,
-                 retry_codes=None, max_retries=3, retry_delay=3,
-                 referral_id=None):
+                 retry_codes=None, ignore_codes=None, max_retries=3,
+                 retry_delay=3, referral_id=None):
 
         """Initializes the HTTP class."""
 
@@ -101,12 +104,18 @@ class HTTP:
         self.endpoint = 'https://api.bybit.com' if not endpoint else endpoint
 
         # Setup logger.
-        logging.basicConfig(
-            level=logging_level,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
         self.logger = logging.getLogger(__name__)
+
+        if len(logging.root.handlers) == 0:
+            #no handler on root logger set -> we add handler just for this logger to not mess with custom logic from outside
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter(fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                                                   datefmt='%Y-%m-%d %H:%M:%S'
+                                                   )
+                                 )
+            handler.setLevel(logging_level)
+            self.logger.addHandler(handler)
+
         self.logger.info('Initializing HTTP session.')
         self.log_requests = log_requests
 
@@ -121,7 +130,7 @@ class HTTP:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 
-        # Set whitelist of non-fatal Bybit return error codes to retry
+        # Set whitelist of non-fatal Bybit status codes to retry on.
         self.retry_codes = {
             10002,      # request expired, check your timestamp and recv_window
             10006,      # too many requests
@@ -131,6 +140,9 @@ class HTTP:
             130035,     # Too freq to cancel, Try it later (linear)
             130150      # Please try again later (linear)
         } if not retry_codes else retry_codes
+
+        # Set whitelist of non-fatal Bybit status codes to ignore.
+        self.ignore_codes = {} if not ignore_codes else ignore_codes
 
         # Initialize requests session.
         self.client = requests.Session()
@@ -1651,12 +1663,18 @@ class WebSocket:
         self.wsName = 'Authenticated' if api_key else 'Non-Authenticated'
 
         # Setup logger.
-        logging.basicConfig(
-            level=logging_level,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
         self.logger = logging.getLogger(__name__)
+
+        if len(logging.root.handlers) == 0:
+            #no handler on root logger set -> we add handler just for this logger to not mess with custom logic from outside
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter(fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                                                   datefmt='%Y-%m-%d %H:%M:%S'
+                                                   )
+                                 )
+            handler.setLevel(logging_level)
+            self.logger.addHandler(handler)
+
         self.logger.info(f'Initializing {self.wsName} WebSocket.')
 
         # Ensure authentication for private topics.
@@ -1893,10 +1911,13 @@ class WebSocket:
 
                 # Record the initial snapshot.
                 elif 'snapshot' in msg_json['type']:
-                    if topic.endswith('USDT'):
-                        self.data[topic] = msg_json['data']['order_book']
+                    if self.trim:
+                        if topic.endswith('USDT'):
+                            self.data[topic] = msg_json['data']['order_book']
+                        else:
+                            self.data[topic] = msg_json['data']
                     else:
-                        self.data[topic] = msg_json['data']              
+                        self.data[topic] = msg_json
 
             # For incoming 'order' and 'stop_order' data.
             elif topic in {'order', 'stop_order'}:
