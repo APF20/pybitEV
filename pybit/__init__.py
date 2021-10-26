@@ -275,13 +275,15 @@ class HTTP:
 
     def liquidated_orders(self, **kwargs):
         """
-        Retrieve the liquidated orders. The query range is the last seven days
-        of data.
+        ABANDONED! Please use liquidation websocket instead. Retrieve the
+        liquidated orders. The query range is the last seven days of data.
 
         :param kwargs: See
             https://bybit-exchange.github.io/docs/inverse/#t-query_liqrecords.
         :returns: Request results as dictionary.
         """
+
+        self.logger.warning('This endpoint has been removed. Use liquidation websocket')
 
         # Replace query param 'from_id' since 'from' keyword is reserved.
         # Temporary workaround until Bybit updates official request params
@@ -2046,15 +2048,18 @@ class WebSocket:
                         except AttributeError:
                             self.data[topic] = msg_json['data']
 
-            # For incoming 'trade.x' and 'execution' data.
-            elif any(i in topic for i in {'trade', 'execution'}):
+            # For incoming 'trade.x', 'execution' and 'liquidation.x' data.
+            elif any(i in topic for i in {'trade', 'execution', 'liquidation'}):
 
                 # Keep appending or create new list if not already created.
+                data = [msg_json['data']] if isinstance(
+                    msg_data['data'], dict) else msg_json['data']
+
                 try:
-                    for i in msg_json['data']:
+                    for i in data:
                         self.data[topic].append(i)
                 except AttributeError:
-                    self.data[topic] = msg_json['data']
+                    self.data[topic] = data
 
                 # If list is too long, pop the first entry.
                 if len(self.data[topic]) > self.max_length:
