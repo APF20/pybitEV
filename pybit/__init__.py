@@ -2009,25 +2009,25 @@ class WebSocket:
 
                     # Delete.
                     for entry in msg_json['data']['delete']:
-                        index = self._find_index(self.data[topic], entry, 'id')
-                        self.data[topic].pop(index)
+                        del self.data[topic][entry['side']][entry['id']]
 
-                    # Update.
-                    for entry in msg_json['data']['update']:
-                        index = self._find_index(self.data[topic], entry, 'id')
-                        self.data[topic][index] = entry
-
-                    # Insert.
-                    for entry in msg_json['data']['insert']:
-                        self.data[topic].append(entry)
+                    # Updates and Inserts (in order).
+                    for entry in [
+                        *msg_json['data']['update'], *msg_json['data']['insert']
+                    ]:
+                        self.data[topic][entry['side']][entry['id']] = entry
 
                 # Record the initial snapshot.
                 elif 'snapshot' in msg_json['type']:
 
-                    if topic.endswith('USDT'):
-                        self.data[topic] = msg_json['data']['order_book']
-                    else:
-                        self.data[topic] = msg_json['data']
+                    data = msg_json['data']['order_book'] if(
+                        'order_book' in msg_json['data']) else msg_json['data']
+
+                    for entry in data:
+                        try:
+                            self.data[topic][entry['side']][entry['id']] = entry
+                        except KeyError:
+                            self.data[topic][entry['side']] = {entry['id']: entry}
 
             # For incoming 'order' and 'stop_order' data.
             elif topic in {'order', 'stop_order'}:
@@ -2077,9 +2077,7 @@ class WebSocket:
 
                 # Make updates according to delta response.
                 if 'delta' in msg_json['type']:
-                    self.data[topic] = {
-                        **self.data[topic], **msg_json['data']['update'][0]
-                }
+                    self.data[topic].update(msg_json['data']['update'][0])
 
                 # Record the initial snapshot.
                 elif 'snapshot' in msg_json['type']:
