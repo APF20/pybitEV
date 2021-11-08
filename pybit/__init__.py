@@ -1747,7 +1747,8 @@ class WebSocket:
             fetches, should the data show all trade history up to the maximum
             length or only get the data since the last fetch?
         :param trim_data: Decide whether the returning data should be
-            trimmed to only provide the data value.
+            trimmed to only provide the data value. Not compatible with Delta
+            style topics.
 
         :returns: WebSocket session.
         """
@@ -2022,13 +2023,11 @@ class WebSocket:
 
                 # Record the initial snapshot.
                 elif 'snapshot' in msg_json['type']:
-                    if self.trim:
-                        if topic.endswith('USDT'):
-                            self.data[topic] = msg_json['data']['order_book']
-                        else:
-                            self.data[topic] = msg_json['data']
+
+                    if topic.endswith('USDT'):
+                        self.data[topic] = msg_json['data']['order_book']
                     else:
-                        self.data[topic] = msg_json
+                        self.data[topic] = msg_json['data']
 
             # For incoming 'order' and 'stop_order' data.
             elif topic in {'order', 'stop_order'}:
@@ -2084,7 +2083,7 @@ class WebSocket:
 
                 # Record the initial snapshot.
                 elif 'snapshot' in msg_json['type']:
-                    self.data[topic] = msg_json['data'] if self.trim else msg_json
+                    self.data[topic] = msg_json['data']
 
             # If incoming 'position' data.
             elif topic == 'position':
