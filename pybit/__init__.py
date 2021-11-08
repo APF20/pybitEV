@@ -2029,6 +2029,9 @@ class WebSocket:
                         except KeyError:
                             self.data[topic][entry['side']] = {entry['id']: entry}
 
+                # Record message timestamp
+                self.data[topic]['timestamp_e6'] = msg_json['timestamp_e6']
+
             # For incoming 'order' and 'stop_order' data.
             elif topic in {'order', 'stop_order'}:
 
