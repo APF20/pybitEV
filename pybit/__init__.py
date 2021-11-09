@@ -2055,7 +2055,7 @@ class WebSocket:
 
                 # Keep appending or create new list if not already created.
                 data = [msg_json['data']] if isinstance(
-                    msg_data['data'], dict) else msg_json['data']
+                    msg_json['data'], dict) else msg_json['data']
 
                 try:
                     for i in data:
