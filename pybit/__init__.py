@@ -40,7 +40,7 @@ class HTTP:
     """
     Connector for Bybit's HTTP API.
 
-    :param endpoint: The endpoint URL of the HTTP API, e.g.
+    :param endpoint: The base endpoint URL of the REST HTTP API, e.g.
         'https://api-testnet.bybit.com'.
     :type endpoint: str
 
@@ -88,6 +88,11 @@ class HTTP:
         identification.
     :type referral_id: str
 
+    :param contract_type: The contract type endpoints to use for requests. e.g.
+        'linear', 'inverse', 'futures', 'spot'. Can be dynamically changed by
+        using the 'set_contract_type' function.
+    :type contract_type: str
+
     :returns: pybit.HTTP session.
 
     """
@@ -96,12 +101,12 @@ class HTTP:
                  logging_level=logging.INFO, log_requests=False,
                  request_timeout=10, recv_window=5000, force_retry=False,
                  retry_codes=None, ignore_codes=None, max_retries=3,
-                 retry_delay=3, referral_id=None):
+                 retry_delay=3, referral_id=None, contract_type=None):
 
         """Initializes the HTTP class."""
 
-        # Set the endpoint.
-        self.endpoint = 'https://api.bybit.com' if not endpoint else endpoint
+        # Set the base endpoint url.
+        self.url = 'https://api.bybit.com' if not endpoint else endpoint
 
         # Setup logger.
         self.logger = logging.getLogger(__name__)
@@ -158,25 +163,184 @@ class HTTP:
         if referral_id:
             self.client.headers.update({'Referer': referral_id})
 
+        # Set contract type
+        self.set_contract_type(contract_type)
+
     def _exit(self):
         """Closes the request session."""
         self.client.close()
         self.logger.info('HTTP session closed.')
 
-    def _contract_type(self, symbol):
+    def set_contract_type(self, type: str):
         """
-        Determine trading symbol contract type.
+        Set contract_type var and endpoints dict based on contract type.
 
-        :param symbol: Trading symbol.
-        :returns: Contract type: inverse, linear, futures.
+        :param type: str Contract type e.g. linear, inverse, futures, spot
         """
 
-        if symbol:
-            if symbol.endswith('USDT'):
-                return 'linear'
-            elif symbol[-2:].isdigit():
-                return 'futures'
-        return 'inverse'
+        self.contract_type = type
+
+        if type == 'linear':
+            self.endpoints = {
+                'query_kline':                  '/public/linear/kline',
+                'public_trading_records':       '/public/linear/recent-trading-records',
+                'query_mark_price_kline':       '/public/linear/mark-price-kline',
+                'query_index_price_kline':      '/public/linear/index-price-kline',
+                'query_premium_index_kline':    '/public/linear/premium-index-kline',
+                'place_active_order':           '/private/linear/order/create',
+                'get_active_order':             '/private/linear/order/list',
+                'cancel_active_order':          '/private/linear/order/cancel',
+                'cancel_all_active_orders':     '/private/linear/order/cancel-all',
+                'replace_active_order':         '/private/linear/order/replace',
+                'query_active_order':           '/private/linear/order/search',
+                'place_conditional_order':      '/private/linear/stop-order/create',
+                'get_conditional_order':        '/private/linear/stop-order/list',
+                'cancel_conditional_order':     '/private/linear/stop-order/cancel',
+                'cancel_all_conditional_orders':'/private/linear/stop-order/cancel-all',
+                'replace_conditional_order':    '/private/linear/stop-order/replace',
+                'query_conditional_order':      '/private/linear/stop-order/search',
+                'my_position':                  '/private/linear/position/list',
+                'set_auto_add_margin':          '/private/linear/position/set-auto-add-margin',
+                'set_leverage':                 '/private/linear/position/set-leverage',
+                'cross_isolated_margin_switch': '/private/linear/position/switch-isolated',
+                'full_partial_position_tp_sl_switch':   '/private/linear/tpsl/switch-mode',
+                'set_trading_stop':             '/private/linear/position/trading-stop',
+                'add_reduce_margin':            '/private/linear/position/add-margin',
+                'user_trade_records':           '/private/linear/trade/execution/list',
+                'closed_profit_and_loss':       '/private/linear/trade/closed-pnl/list',
+                'get_risk_limit':               '/public/linear/risk-limit',
+                'set_risk_limit':               '/private/linear/position/set-risk',
+                'get_the_last_funding_rate':    '/public/linear/funding/prev-funding-rate',
+                'my_last_funding_fee':          '/private/linear/funding/prev-funding',
+                'predicted_funding_rate':       '/private/linear/funding/predicted-funding'
+            }
+
+        elif type == 'inverse':
+            self.endpoints = {
+                'query_kline':                  '/v2/public/kline/list',
+                'public_trading_records':       '/v2/public/trading-records',
+                'query_mark_price_kline':       '/v2/public/mark-price-kline',
+                'query_index_price_kline':      '/v2/public/index-price-kline',
+                'query_premium_index_kline':    '/v2/public/premium-index-kline',
+                'place_active_order':           '/v2/private/order/create',
+                'get_active_order':             '/v2/private/order/list',
+                'cancel_active_order':          '/v2/private/order/cancel',
+                'cancel_all_active_orders':     '/v2/private/order/cancelAll',
+                'replace_active_order':         '/v2/private/order/replace',
+                'query_active_order':           '/v2/private/order',
+                'place_conditional_order':      '/v2/private/stop-order/create',
+                'get_conditional_order':        '/v2/private/stop-order/list',
+                'cancel_conditional_order':     '/v2/private/stop-order/cancel',
+                'cancel_all_conditional_orders':'/v2/private/stop-order/cancelAll',
+                'replace_conditional_order':    '/v2/private/stop-order/replace',
+                'query_conditional_order':      '/v2/private/stop-order',
+                'my_position':                  '/v2/private/position/list',
+                'set_leverage':                 '/v2/private/position/leverage/save',
+                'cross_isolated_margin_switch': '/v2/private/position/switch-isolated',
+                'position_mode_switch':         '/v2/private/position/switch-mode',
+                'full_partial_position_tp_sl_switch':   '/v2/private/tpsl/switch-mode',
+                'change_margin':                '/v2/private/position/change-position-margin',
+                'set_trading_stop':             '/v2/private/position/trading-stop',
+                'user_trade_records':           '/v2/private/execution/list',
+                'closed_profit_and_loss':       '/v2/private/trade/closed-pnl/list',
+                'get_risk_limit':               '/v2/public/risk-limit/list',
+                'set_risk_limit':               '/v2/private/position/risk-limit',
+                'get_the_last_funding_rate':    '/v2/public/funding/prev-funding-rate',
+                'my_last_funding_fee':          '/v2/private/funding/prev-funding',
+                'predicted_funding_rate':       '/v2/private/funding/predicted-funding'
+            }
+
+        elif type == 'futures':
+            self.endpoints = {
+                'query_kline':                  '/v2/public/kline/list',
+                'public_trading_records':       '/v2/public/trading-records',
+                'query_mark_price_kline':       '/v2/public/mark-price-kline',
+                'query_index_price_kline':      '/v2/public/index-price-kline',
+                'query_premium_index_kline':    '/v2/public/premium-index-kline',
+                'place_active_order':           '/futures/private/order/create',
+                'get_active_order':             '/futures/private/order/list',
+                'cancel_active_order':          '/futures/private/order/cancel',
+                'cancel_all_active_orders':     '/futures/private/order/cancelAll',
+                'replace_active_order':         '/futures/private/order/replace',
+                'query_active_order':           '/futures/private/order',
+                'place_conditional_order':      '/futures/private/stop-order/create',
+                'get_conditional_order':        '/futures/private/stop-order/list',
+                'cancel_conditional_order':     '/futures/private/stop-order/cancel',
+                'cancel_all_conditional_orders':'/futures/private/stop-order/cancelAll',
+                'replace_conditional_order':    '/futures/private/stop-order/replace',
+                'query_conditional_order':      '/futures/private/stop-order',
+                'my_position':                  '/futures/private/position/list',
+                'set_leverage':                 '/futures/private/position/leverage/save',
+                'cross_isolated_margin_switch': '/futures/private/position/switch-mode',
+                'position_mode_switch':         '/futures/private/position/switch-mode',
+                'full_partial_position_tp_sl_switch':   '/futures/private/tpsl/switch-mode',
+                'change_margin':                '/futures/private/position/change-position-margin',
+                'set_trading_stop':             '/futures/private/position/trading-stop',
+                'user_trade_records':           '/futures/private/execution/list',
+                'closed_profit_and_loss':       '/futures/private/trade/closed-pnl/list',
+                'get_risk_limit':               '/v2/public/risk-limit/list',
+                'set_risk_limit':               '/futures/private/position/risk-limit'
+            }
+
+        elif type == 'spot':
+            self.endpoints = {
+                'orderbook':                    '/spot/quote/v1/depth',
+                'merged_orderbook':             '/spot/quote/v1/depth/merged',
+                'query_kline':                  '/spot/quote/v1/kline',
+                'latest_information_for_symbol':'/spot/quote/v1/ticker/24hr',
+                'last_traded_price':            '/spot/quote/v1/ticker/price',
+                'best_bid_ask_price':           '/spot/quote/v1/ticker/book_ticker',
+                'public_trading_records':       '/spot/quote/v1/trades',
+                'query_symbol':                 '/spot/v1/symbols',
+                'place_active_order':           '/spot/v1/order',
+                'cancel_active_order':          '/spot/v1/order',
+                'fast_cancel_active_order':     '/spot/v1/order/fast',
+                'batch_cancel_orders':          '/spot/order/batch-cancel',
+                'batch_fast_cancel_orders':     '/spot/order/batch-fast-cancel',
+                'batch_cancel_order_by_ids':    '/spot/order/batch-cancel-by-ids',
+                'get_active_order':             '/spot/v1/order',
+                'open_orders':                  '/spot/v1/open-orders',
+                'order_history':                '/spot/v1/history-orders',
+                'user_trade_records':           '/spot/v1/myTrades',
+                'get_wallet_balance':           '/spot/v1/account',
+                'server_time':                  '/spot/v1/time'
+            }
+
+        elif not type:
+            self.endpoints = {}
+            self.logger.warning(
+                'Contract type is not set. Only account asset endpoints are available. '
+                'Use contract_type init param or set_contract_type() to set/change.'
+            )
+
+        # add shared endpoints for linear, inverse and futures
+        if type in {'linear', 'inverse', 'futures'}:
+            self.endpoints.update({
+                'orderbook':                    '/v2/public/orderBook/L2',
+                'latest_information_for_symbol':'/v2/public/tickers',
+                'query_symbol':                 '/v2/public/symbols',
+                'open_interest':                '/v2/public/open-interest',
+                'latest_big_deal':              '/v2/public/big-deal',
+                'change_user_leverage':         '/user/leverage/save',
+                'long_short_ratio':             '/v2/public/account-ratio',
+                'api_key_info':                 '/v2/private/account/api-key',
+                'lcp_info':                     '/v2/private/account/lcp',
+                'get_wallet_balance':           '/v2/private/wallet/balance',
+                'wallet_fund_records':          '/v2/private/wallet/fund/records',
+                'withdraw_records':             '/v2/private/wallet/withdraw/list',
+                'asset_exchange_records':       '/v2/private/exchange-order/list',
+                'server_time':                  '/v2/public/time',
+                'announcement':                 '/v2/public/announcement'
+            })
+
+        # add common endpoints for account asset
+        self.endpoints.update({
+            'create_internal_transfer':         '/asset/v1/private/transfer',
+            'create_subaccount_transfer':       '/asset/v1/private/sub-member/transfer',
+            'query_transfer_list':              '/asset/v1/private/transfer/list',
+            'query_subaccount_list':            '/asset/v1/private/sub-member/member-ids',
+            'query_subaccount_transfer_list':   '/asset/v1/private/sub-member/transfer/list'
+        })
 
     def orderbook(self, **kwargs):
         """
@@ -189,7 +353,22 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/v2/public/orderBook/L2',
+            path=self.url + self.endpoints['orderbook'],
+            query=kwargs
+        )
+
+    def merged_orderbook(self, **kwargs):
+        """
+        Get the merged orderbook.
+
+        :param kwargs: See
+            https://bybit-exchange.github.io/docs/spot/#t-mergedorderbook.
+        :returns: Request results as dictionary.
+        """
+
+        return self._submit_request(
+            method='GET',
+            path=self.url + self.endpoints['merged_orderbook'],
             query=kwargs
         )
 
@@ -207,15 +386,9 @@ class HTTP:
         if 'from_time' in kwargs:
             kwargs['from'] = kwargs.pop('from_time')
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/public/linear/kline'
-        else:
-            suffix = '/v2/public/kline/list'
-
         return self._submit_request(
             method='GET',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['query_kline'],
             query=kwargs
         )
 
@@ -230,7 +403,37 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/v2/public/tickers',
+            path=self.url + self.endpoints['latest_information_for_symbol'],
+            query=kwargs
+        )
+
+    def last_traded_price(self, **kwargs):
+        """
+        Get the last traded price for symbol.
+
+        :param kwargs: See
+            https://bybit-exchange.github.io/docs/spot/#t-lasttradedprice.
+        :returns: Request results as dictionary.
+        """
+
+        return self._submit_request(
+            method='GET',
+            path=self.url + self.endpoints['last_traded_price'],
+            query=kwargs
+        )
+
+    def best_bid_ask_price(self, **kwargs):
+        """
+        Get the best bid and ask prices and quantities for symbol.
+
+        :param kwargs: See
+            https://bybit-exchange.github.io/docs/spot/#t-bestbidask.
+        :returns: Request results as dictionary.
+        """
+
+        return self._submit_request(
+            method='GET',
+            path=self.url + self.endpoints['best_bid_ask_price'],
             query=kwargs
         )
 
@@ -249,15 +452,9 @@ class HTTP:
         if 'from_id' in kwargs:
             kwargs['from'] = kwargs.pop('from_id')
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/public/linear/recent-trading-records'
-        else:
-            suffix = '/v2/public/trading-records'
-
         return self._submit_request(
             method='GET',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['public_trading_records'],
             query=kwargs
         )
 
@@ -270,7 +467,7 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/v2/public/symbols'
+            path=self.url + self.endpoints['query_symbol']
         )
 
     def liquidated_orders(self, **kwargs):
@@ -310,15 +507,9 @@ class HTTP:
         if 'from_time' in kwargs:
             kwargs['from'] = kwargs.pop('from_time')
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/public/linear/mark-price-kline'
-        else:
-            suffix = '/v2/public/mark-price-kline'
-
         return self._submit_request(
             method='GET',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['query_mark_price_kline'],
             query=kwargs
         )
 
@@ -336,16 +527,10 @@ class HTTP:
         # Temporary workaround until Bybit updates official request params
         if 'from_time' in kwargs:
             kwargs['from'] = kwargs.pop('from_time')
-
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/public/linear/index-price-kline'
-        else:
-            suffix = '/v2/public/index-price-kline'
  
         return self._submit_request(
             method='GET',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['query_index_price_kline'],
             query=kwargs
         )
 
@@ -364,15 +549,9 @@ class HTTP:
         if 'from_time' in kwargs:
             kwargs['from'] = kwargs.pop('from_time')
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/public/linear/premium-index-kline'
-        else:
-            suffix = '/v2/public/premium-index-kline'
-
         return self._submit_request(
             method='GET',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['query_premium_index_kline'],
             query=kwargs
         )
 
@@ -388,7 +567,7 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/v2/public/open-interest',
+            path=self.url + self.endpoints['open_interest'],
             query=kwargs
         )
 
@@ -403,7 +582,7 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/v2/public/big-deal',
+            path=self.url + self.endpoints['latest_big_deal'],
             query=kwargs
         )
 
@@ -418,31 +597,22 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/v2/public/account-ratio',
+            path=self.url + self.endpoints['long_short_ratio'],
             query=kwargs
         )
 
     def place_active_order(self, **kwargs):
         """
-        Places an active order. For more information, see
-        https://bybit-exchange.github.io/docs/inverse/#t-activeorders.
+        Places an active order.
 
         :param kwargs: See
             https://bybit-exchange.github.io/docs/inverse/#t-activeorders.
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/order/create'
-        elif type == 'futures':
-            suffix = '/futures/private/order/create'
-        else:
-            suffix = '/v2/private/order/create'
-
         return self._submit_request(
             method='POST',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['place_active_order'],
             query=kwargs,
             auth=True
         )
@@ -471,52 +641,51 @@ class HTTP:
 
     def get_active_order(self, **kwargs):
         """
-        Gets an active order. For more information, see
-        https://bybit-exchange.github.io/docs/inverse/#t-getactive.
+        Gets an active order.
 
         :param kwargs: See
             https://bybit-exchange.github.io/docs/inverse/#t-getactive.
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/order/list'
-        elif type == 'futures':
-            suffix = '/futures/private/order/list'
-        else:
-            suffix = '/v2/private/order/list'
-
         return self._submit_request(
             method='GET',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['get_active_order'],
             query=kwargs,
             auth=True
         )
 
     def cancel_active_order(self, **kwargs):
         """
-        Cancels an active order. For more information, see
-        https://bybit-exchange.github.io/docs/inverse/#t-cancelactive.
+        Cancels an active order.
 
         :param kwargs: See
             https://bybit-exchange.github.io/docs/inverse/#t-cancelactive.
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/order/cancel'
-        elif type == 'futures':
-            suffix = '/futures/private/order/cancel'
-        else:
-            suffix = '/v2/private/order/cancel'
+        method = 'DELETE' if self.contract_type == 'spot' else 'POST'
 
         return self._submit_request(
-            method='POST',
-            path=self.endpoint + suffix,
+            method=method,
+            path=self.url + self.endpoints['cancel_active_order'],
             query=kwargs,
             auth=True
+        )
+
+    def fast_cancel_active_order(self, **kwargs):
+        """
+        Cancels an active order.
+
+        :param kwargs: See
+            https://bybit-exchange.github.io/docs/spot/#t-fastcancelactiveorder.
+        :returns: Request results as dictionary.
+        """
+
+        return self._submit_request(
+            method='DELETE',
+            path=self.url + self.endpoints['fast_cancel_active_order'],
+            query=kwargs
         )
 
     def cancel_active_order_bulk(self, orders: list, max_in_parallel=10):
@@ -551,17 +720,57 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/order/cancel-all'
-        elif type == 'futures':
-            suffix = '/futures/private/order/cancelAll'
-        else:
-            suffix = '/v2/private/order/cancelAll'
-
         return self._submit_request(
             method='POST',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['cancel_all_active_orders'],
+            query=kwargs,
+            auth=True
+        )
+
+    def batch_cancel_orders(self, **kwargs):
+        """
+        Cancel all active orders by symbol, side and orderTypes.
+
+        :param kwargs: See
+            https://bybit-exchange.github.io/docs/spot/#t-batchcancelactiveorder.
+        :returns: Request results as dictionary.
+        """
+
+        return self._submit_request(
+            method='DELETE',
+            path=self.url + self.endpoints['batch_cancel_orders'],
+            query=kwargs,
+            auth=True
+        )
+
+    def batch_fast_cancel_orders(self, **kwargs):
+        """
+        Fast cancel all active orders by symbol, side and orderTypes.
+
+        :param kwargs: See
+            https://bybit-exchange.github.io/docs/spot/#t-batchfastcancelactiveorder.
+        :returns: Request results as dictionary.
+        """
+
+        return self._submit_request(
+            method='DELETE',
+            path=self.url + self.endpoints['batch_fast_cancel_orders'],
+            query=kwargs,
+            auth=True
+        )
+
+    def batch_cancel_order_by_ids(self, **kwargs):
+        """
+        Cancel active orders by matching orderIds.
+
+        :param kwargs: See
+            https://bybit-exchange.github.io/docs/spot/#t-batchcancelactiveorderbyids.
+        :returns: Request results as dictionary.
+        """
+
+        return self._submit_request(
+            method='DELETE',
+            path=self.url + self.endpoints['batch_cancel_order_by_ids'],
             query=kwargs,
             auth=True
         )
@@ -575,17 +784,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/order/replace'
-        elif type == 'futures':
-            suffix = '/futures/private/order/replace'
-        else:
-            suffix = '/v2/private/order/replace'
-
         return self._submit_request(
             method='POST',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['replace_active_order'],
             query=kwargs,
             auth=True
         )
@@ -614,24 +815,50 @@ class HTTP:
 
     def query_active_order(self, **kwargs):
         """
-        Query real-time active order information.
+        Query real-time active order information. For spot contracts
+            use get_active_order() or open_orders() as 'orderId' param
+            is optionally used as a filter for both functions.
 
         :param kwargs: See
             https://bybit-exchange.github.io/docs/inverse/#t-queryactive.
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/order/search'
-        elif type == 'futures':
-            suffix = '/futures/private/order'
-        else:
-            suffix = '/v2/private/order'
+        return self._submit_request(
+            method='GET',
+            path=self.url + self.endpoints['query_active_order'],
+            query=kwargs,
+            auth=True
+        )
+
+    def open_orders(self, **kwargs):
+        """
+        Get open active order information.
+
+        :param kwargs: See
+            https://bybit-exchange.github.io/docs/spot/#t-openorders.
+        :returns: Request results as dictionary.
+        """
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['open_orders'],
+            query=kwargs,
+            auth=True
+        )
+
+    def order_history(self, **kwargs):
+        """
+        Get order history information.
+
+        :param kwargs: See
+            https://bybit-exchange.github.io/docs/spot/#t-orderhistory.
+        :returns: Request results as dictionary.
+        """
+
+        return self._submit_request(
+            method='GET',
+            path=self.url + self.endpoints['order_history'],
             query=kwargs,
             auth=True
         )
@@ -646,17 +873,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/stop-order/create'
-        elif type == 'futures':
-            suffix = '/futures/private/stop-order/create'
-        else:
-            suffix = '/v2/private/stop-order/create'
-
         return self._submit_request(
             method='POST',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['place_conditional_order'],
             query=kwargs,
             auth=True
         )
@@ -693,17 +912,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/stop-order/list'
-        elif type == 'futures':
-            suffix = '/futures/private/stop-order/list'
-        else:
-            suffix = '/v2/private/stop-order/list'
-
         return self._submit_request(
             method='GET',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['get_conditional_order'],
             query=kwargs,
             auth=True
         )
@@ -718,17 +929,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/stop-order/cancel'
-        elif type == 'futures':
-            suffix = '/futures/private/stop-order/cancel'
-        else:
-            suffix = '/v2/private/stop-order/cancel'
-
         return self._submit_request(
             method='POST',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['cancel_conditional_order'],
             query=kwargs,
             auth=True
         )
@@ -765,17 +968,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/stop-order/cancel-all'
-        elif type == 'futures':
-            suffix = '/futures/private/stop-order/cancelAll'
-        else:
-            suffix = '/v2/private/stop-order/cancelAll'
-
         return self._submit_request(
             method='POST',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['cancel_all_conditional_orders'],
             query=kwargs,
             auth=True
         )
@@ -789,17 +984,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/stop-order/replace'
-        elif type == 'futures':
-            suffix = '/futures/private/stop-order/replace'
-        else:
-            suffix = '/v2/private/stop-order/replace'
-
         return self._submit_request(
             method='POST',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['replace_conditional_order'],
             query=kwargs,
             auth=True
         )
@@ -835,17 +1022,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/stop-order/search'
-        elif type == 'futures':
-            suffix = '/futures/private/stop-order'
-        else:
-            suffix = '/v2/private/stop-order'
-
         return self._submit_request(
             method='GET',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['query_conditional_order'],
             query=kwargs,
             auth=True
         )
@@ -859,17 +1038,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/position/list'
-        elif type == 'futures':
-            suffix = '/futures/private/position/list'
-        else:
-            suffix = '/v2/private/position/list'
-
         return self._submit_request(
             method='GET',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['my_position'],
             query=kwargs,
             auth=True
         )
@@ -886,7 +1057,7 @@ class HTTP:
 
         return self._submit_request(
             method='POST',
-            path=self.endpoint + '/private/linear/position/set-auto-add-margin',
+            path=self.url + self.endpoints['set_auto_add_margin'],
             query=kwargs,
             auth=True
         )
@@ -913,7 +1084,7 @@ class HTTP:
 
         return self._submit_request(
             method='POST',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['set_leverage'],
             query=kwargs,
             auth=True
         )
@@ -928,17 +1099,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/position/switch-isolated'
-        elif type == 'futures':
-            suffix = '/futures/private/position/switch-mode'
-        else:
-            suffix = '/v2/private/position/switch-isolated'
-
         return self._submit_request(
             method='POST',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['cross_isolated_margin_switch'],
             query=kwargs,
             auth=True
         )
@@ -955,15 +1118,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'futures':
-            suffix = '/futures/private/position/switch-mode'
-        else:
-            suffix = '/v2/private/position/switch-mode'
-
         return self._submit_request(
             method='POST',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['position_mode_switch'],
             query=kwargs,
             auth=True
         )
@@ -976,17 +1133,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/tpsl/switch-mode'
-        elif type == 'futures':
-            suffix = '/futures/private/tpsl/switch-mode'
-        else:
-            suffix = '/v2/private/tpsl/switch-mode'
-
         return self._submit_request(
             method='POST',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['full_partial_position_tp_sl_switch'],
             query=kwargs,
             auth=True
         )
@@ -1000,15 +1149,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'futures':
-            suffix = '/futures/private/position/change-position-margin'
-        else:
-            suffix = '/v2/private/position/change-position-margin'
-
         return self._submit_request(
             method='POST',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['change_margin'],
             query=kwargs,
             auth=True
         )
@@ -1022,17 +1165,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/position/trading-stop'
-        elif type == 'futures':
-            suffix = '/futures/private/position/trading-stop'
-        else:
-            suffix = '/v2/private/position/trading-stop'
-
         return self._submit_request(
             method='POST',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['set_trading_stop'],
             query=kwargs,
             auth=True
         )
@@ -1048,7 +1183,7 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/private/linear/position/add-margin',
+            path=self.url + self.endpoints['add_reduce_margin'],
             query=kwargs,
             auth=True
         )
@@ -1066,7 +1201,7 @@ class HTTP:
 
         return self._submit_request(
             method='POST',
-            path=self.endpoint + '/user/leverage/save',
+            path=self.url + self.endpoints['change_user_leverage'],
             query=kwargs,
             auth=True
         )
@@ -1081,17 +1216,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/trade/execution/list'
-        elif type == 'futures':
-            suffix = '/futures/private/execution/list'
-        else:
-            suffix = '/v2/private/execution/list'
-
         return self._submit_request(
             method='GET',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['user_trade_records'],
             query=kwargs,
             auth=True
         )
@@ -1106,17 +1233,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/trade/closed-pnl/list'
-        elif type == 'futures':
-            suffix = '/futures/private/trade/closed-pnl/list'
-        else:
-            suffix = '/v2/private/trade/closed-pnl/list'
-
         return self._submit_request(
             method='GET',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['closed_profit_and_loss'],
             query=kwargs,
             auth=True
         )
@@ -1133,15 +1252,9 @@ class HTTP:
         if kwargs.get('is_linear') in (False, True):
             self.logger.warning("The is_linear argument is obsolete.")
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/public/linear/risk-limit'
-        else:
-            suffix = '/v2/public/risk-limit/list'
-
         return self._submit_request(
             method='GET',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['get_risk_limit'],
             query=kwargs,
             auth=True
         )
@@ -1155,15 +1268,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/position/set-risk'
-        else:
-            suffix = '/v2/private/position/risk-limit'
-
         return self._submit_request(
             method='POST',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['set_risk_limit'],
             query=kwargs,
             auth=True
         )
@@ -1179,15 +1286,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/public/linear/funding/prev-funding-rate'
-        else:
-            suffix = '/v2/public/funding/prev-funding-rate'
-
         return self._submit_request(
             method='GET',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['get_the_last_funding_rate'],
             query=kwargs
         )
 
@@ -1204,15 +1305,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/funding/prev-funding'
-        else:
-            suffix = '/v2/private/funding/prev-funding'
-
         return self._submit_request(
             method='GET',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['my_last_funding_fee'],
             query=kwargs,
             auth=True
         )
@@ -1226,15 +1321,9 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/funding/predicted-funding'
-        else:
-            suffix = '/v2/private/funding/predicted-funding'
-
         return self._submit_request(
             method='GET',
-            path=self.endpoint + suffix,
+            path=self.url + self.endpoints['predicted_funding_rate'],
             query=kwargs,
             auth=True
         )
@@ -1248,7 +1337,7 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/v2/private/account/api-key',
+            path=self.url + self.endpoints['api_key_info'],
             auth=True
         )
 
@@ -1266,7 +1355,7 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/v2/private/account/lcp',
+            path=self.url + self.endpoints['lcp_info'],
             query=kwargs,
             auth=True
         )
@@ -1282,7 +1371,7 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/v2/private/wallet/balance',
+            path=self.url + self.endpoints['get_wallet_balance'],
             query=kwargs,
             auth=True
         )
@@ -1305,7 +1394,7 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/v2/private/wallet/fund/records',
+            path=self.url + self.endpoints['wallet_fund_records'],
             query=kwargs,
             auth=True
         )
@@ -1321,7 +1410,7 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/v2/private/wallet/withdraw/list',
+            path=self.url + self.endpoints['withdraw_records'],
             query=kwargs,
             auth=True
         )
@@ -1337,7 +1426,7 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/v2/private/exchange-order/list',
+            path=self.url + self.endpoints['asset_exchange_records'],
             query=kwargs,
             auth=True
         )
@@ -1351,7 +1440,7 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/v2/public/time'
+            path=self.url + self.endpoints['server_time']
         )
 
     def announcement(self):
@@ -1363,7 +1452,7 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/v2/public/announcement'
+            path=self.url + self.endpoints['announcement']
         )
 
     '''
@@ -1422,7 +1511,7 @@ class HTTP:
 
         return self._submit_request(
             method='POST',
-            path=self.endpoint + '/asset/v1/private/transfer',
+            path=self.url + self.endpoints['create_internal_transfer'],
             query=kwargs,
             auth=True
         )
@@ -1435,7 +1524,7 @@ class HTTP:
 
         return self._submit_request(
             method='POST',
-            path=self.endpoint + '/asset/v1/private/sub-member/transfer',
+            path=self.url + self.endpoints['create_subaccount_transfer'],
             query=kwargs,
             auth=True
         )
@@ -1448,7 +1537,7 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/asset/v1/private/transfer/list',
+            path=self.url + self.endpoints['query_transfer_list'],
             query=kwargs,
             auth=True
         )
@@ -1461,7 +1550,7 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/asset/v1/private/sub-member/member-ids',
+            path=self.url + self.endpoints['query_subaccount_list'],
             query={},
             auth=True
         )
@@ -1474,7 +1563,7 @@ class HTTP:
 
         return self._submit_request(
             method='GET',
-            path=self.endpoint + '/asset/v1/private/sub-member/transfer/list',
+            path=self.url + self.endpoints['query_subaccount_transfer_list'],
             query=kwargs,
             auth=True
         )
@@ -1597,9 +1686,26 @@ class HTTP:
                     requests.Request(method, path, params=req_params)
                 )
             else:
-                r = self.client.prepare_request(
-                    requests.Request(method, path, data=json.dumps(req_params))
-                )
+                if self.contract_type == 'spot':
+                    full_param_str = '&'.join(
+                        [str(k) + '=' + str(v) for k, v in
+                         sorted(query.items()) if v is not None]
+                    )
+
+                    headers = {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    }
+
+                    r = self.client.prepare_request(
+                        requests.Request(method, path + f"?{full_param_str}",
+                                         headers=headers)
+                    )
+
+                else:
+                    r = self.client.prepare_request(
+                        requests.Request(method, path,
+                                         data=json.dumps(req_params))
+                    )
 
             # Attempt the request.
             try:
