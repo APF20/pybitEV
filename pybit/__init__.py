@@ -1075,14 +1075,6 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        type = self._contract_type(kwargs.get('symbol'))
-        if type == 'linear':
-            suffix = '/private/linear/position/set-leverage'
-        elif type == 'futures':
-            suffix = '/futures/private/position/leverage/save'
-        else:
-            suffix = '/v2/private/position/leverage/save'
-
         return self._submit_request(
             method='POST',
             path=self.url + self.endpoints['set_leverage'],
