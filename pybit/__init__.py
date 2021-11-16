@@ -295,9 +295,9 @@ class HTTP:
                 'place_active_order':           '/spot/v1/order',
                 'cancel_active_order':          '/spot/v1/order',
                 'fast_cancel_active_order':     '/spot/v1/order/fast',
-                'batch_cancel_orders':          '/spot/order/batch-cancel',
-                'batch_fast_cancel_orders':     '/spot/order/batch-fast-cancel',
-                'batch_cancel_order_by_ids':    '/spot/order/batch-cancel-by-ids',
+                'batch_cancel_active_order':    '/spot/order/batch-cancel',
+                'batch_fast_cancel_active_order':'/spot/order/batch-fast-cancel',
+                'batch_cancel_active_order_by_ids':     '/spot/order/batch-cancel-by-ids',
                 'get_active_order':             '/spot/v1/order',
                 'open_orders':                  '/spot/v1/open-orders',
                 'order_history':                '/spot/v1/history-orders',
@@ -727,7 +727,7 @@ class HTTP:
             auth=True
         )
 
-    def batch_cancel_orders(self, **kwargs):
+    def batch_cancel_active_order(self, **kwargs):
         """
         Cancel all active orders by symbol, side and orderTypes.
 
@@ -738,12 +738,12 @@ class HTTP:
 
         return self._submit_request(
             method='DELETE',
-            path=self.url + self.endpoints['batch_cancel_orders'],
+            path=self.url + self.endpoints['batch_cancel_active_order'],
             query=kwargs,
             auth=True
         )
 
-    def batch_fast_cancel_orders(self, **kwargs):
+    def batch_fast_cancel_active_order(self, **kwargs):
         """
         Fast cancel all active orders by symbol, side and orderTypes.
 
@@ -754,12 +754,12 @@ class HTTP:
 
         return self._submit_request(
             method='DELETE',
-            path=self.url + self.endpoints['batch_fast_cancel_orders'],
+            path=self.url + self.endpoints['batch_fast_cancel_active_order'],
             query=kwargs,
             auth=True
         )
 
-    def batch_cancel_order_by_ids(self, **kwargs):
+    def batch_cancel_active_order_by_ids(self, **kwargs):
         """
         Cancel active orders by matching orderIds.
 
@@ -770,7 +770,7 @@ class HTTP:
 
         return self._submit_request(
             method='DELETE',
-            path=self.url + self.endpoints['batch_cancel_order_by_ids'],
+            path=self.url + self.endpoints['batch_cancel_active_order_by_ids'],
             query=kwargs,
             auth=True
         )
