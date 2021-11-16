@@ -1053,25 +1053,6 @@ class HTTP:
             auth=True
         )
 
-    def user_leverage(self, **kwargs):
-        """
-        ABANDONED! Please use my_position instead. Fetches user leverage by
-        fetching user position.
-
-        :param kwargs: See
-            https://bybit-exchange.github.io/docs/inverse/#t-getleverage.
-        :returns: Request results as dictionary.
-        """
-
-        self.logger.warning('This endpoint is deprecated and will be removed. Use my_position()')
-
-        return self._submit_request(
-            method='GET',
-            path=self.endpoint + '/v2/private/position/list',
-            query=kwargs,
-            auth=True
-        )
-
     def change_user_leverage(self, **kwargs):
         """
         Change user leverage.
