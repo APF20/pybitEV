@@ -33,7 +33,7 @@ try:
 except ImportError:
     from json.decoder import JSONDecodeError
 
-VERSION = '1.1.16ev'
+VERSION = '1.2.0'
 
 
 class HTTP:
@@ -154,7 +154,7 @@ class HTTP:
         self.client.headers.update(
             {
                 'User-Agent': 'pybit-' + VERSION,
-                'Content-Type': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded',
                 'Accept': 'application/json',
             }
         )
@@ -1684,19 +1684,13 @@ class HTTP:
                         [str(k) + '=' + str(v) for k, v in
                          sorted(query.items()) if v is not None]
                     )
-
-                    headers = {
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    }
-
                     r = self.client.prepare_request(
-                        requests.Request(method, path + f"?{full_param_str}",
-                                         headers=headers)
+                        requests.Request(method, path + f"?{full_param_str}")
                     )
-
                 else:
+                    headers = {'Content-Type': 'application/json'}
                     r = self.client.prepare_request(
-                        requests.Request(method, path,
+                        requests.Request(method, path, headers=headers,
                                          data=json.dumps(req_params))
                     )
 
