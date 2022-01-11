@@ -38,3 +38,10 @@ class InvalidRequestError(Exception):
             f'Error: {message.capitalize()} (ErrCode: {status_code}) (ErrTime: {time} UTC).'
             f'\nRequest → {request}.'
         )
+
+
+class WebSocketException(Exception):
+    """
+    Exception raised for Bybit WebSocket errors.
+    """
+    pass

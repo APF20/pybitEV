@@ -9,14 +9,23 @@ documentation.
 The following functions are available:
 
 exit()
+set_contract_type()
 
 Public Methods:
 ------------------------
-get_orderbook()
-get_klines()
-get_tickers()
-get_trading_records()
-get_symbols()
+orderbook()
+query_kline()
+latest_information_for_symbol()
+public_trading_records()
+query_symbol()
+liquidated_orders()
+query_mark_price_kline()
+query_index_price_kline()
+query_premium_index_kline()
+open_interest()
+latest_big_deal()
+long_short_ratio()
+get_the_last_funding_rate()
 
 Private Methods:
 (requires authentication)
@@ -37,6 +46,9 @@ query_conditional_order()
 
 user_leverage()
 change_user_leverage()
+cross_isolated_margin_switch()
+position_mode_switch()
+full_partial_position_tp_sl_switch()
 
 my_position()
 change_margin()
@@ -45,7 +57,6 @@ set_trading_stop()
 get_risk_limit()
 set_risk_limit()
 
-get_last_funding_rate()
 my_last_funding_fee()
 predicted_funding_rate()
 
@@ -59,35 +70,84 @@ user_trade_records()
 server_time()
 announcement()
 
+Spot Methods:
+(many of the above methods can also be used with the spot market,
+provided the argument contract_type='spot' is passed,
+or set_contract_type('spot') method is called.)
+------------------------
+fast_cancel_active_order()
+batch_cancel_active_order()
+batch_fast_cancel_active_order()
+batch_cancel_active_order_by_ids()
+
+Asset Transfer Methods:
+------------------------
+create_internal_transfer()
+create_subaccount_transfer()
+query_transfer_list()
+query_subaccount_transfer_list()
+query_subaccount_list()
+
 Custom Methods:
 (requires authentication)
 ------------------------
+place_active_order_bulk()
+cancel_active_order_bulk()
+place_conditional_order_bulk()
+cancel_conditional_order_bulk()
 close_position()
 
 """
 
-# Import pybit and define the HTTP object.
-from pybit import HTTP
+# Import pybit and asyncio, define a coroutine and HTTP object.
+import asyncio
+from pybit import Exchange
 
 """
-You can create an authenticated or unauthenticated HTTP session. 
+You can create an authenticated or unauthenticated REST HTTP session. 
 You can skip authentication by not passing any value for api_key
 and api_secret.
+
+Exchange class supports both context manager protocol (self closing)
+and direct instantiation (manual close required).
 """
 
-# Unauthenticated
-session_unauth = HTTP(endpoint='https://api.bybit.com')
+# Context manager protocol example
 
-# Authenticated
-session_auth = HTTP(
-    endpoint='https://api.bybit.com',
-    api_key='...',
-    api_secret='...'
-)
+# Lets get market information about EOSUSD, using context manager
+# protocol. Note that 'symbol' is a required parameter as per 
+# the Bybit API documentation. This is a public endpoint so
+# api_key and api_secret can optionally be omitted.
 
-# Lets get market information about EOSUSD. Note that 'symbol' is
-# a required parameter as per the Bybit API documentation.
-session_unauth.latest_information_for_symbol(symbol='EOSUSD')
+async def main():
+    async with Exchange() as session:
+        rest = session.rest(
+            endpoint='https://api.bybit.com',
+            api_key='...',
+            api_secret='...',
+            contract_type='linear'
+        )
+        print(await rest.latest_information_for_symbol(symbol='EOSUSD'))
 
-# We can fetch our wallet balance using an auth'd session.
-session_auth.get_wallet_balance(coin='BTC')
+asyncio.run(main())
+
+# Direct instantiation example
+
+# Lets get our wallet balance using direct instantiation with 
+# manual session closure. This is a private endpoint so api_key
+# and api_secret are required.
+
+async def main():
+    try:
+        session = Exchange()
+        rest = session.rest(
+            endpoint='https://api.bybit.com',
+            api_key='...',
+            api_secret='...',
+            contract_type='linear'
+        )
+        print(await rest.get_wallet_balance(coin='BTC'))
+    finally:
+        await session.exit()
+        
+asyncio.run(main())

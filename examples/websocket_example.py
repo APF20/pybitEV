@@ -28,20 +28,16 @@ stop_order
 wallet
 """
 
-# Import the WebSocket object from pybit.
-from pybit import WebSocket
+# Import pybit and asyncio, define a coroutine and WebSocket object.
+import asyncio
+from pybit import Exchange
 
 """
-We can also import the HTTP object at the same time using:
+We can also create a REST Exchange object at the same time using:
 
-from pybit import HTTP, WebSocket
-
-Additionally, we can simply import all of pybit and use each
-object selectively.
-
-import pybit
-client = pybit.HTTP(...)
-ws = pybit.WebSocket(...)
+async with Exchange() as session:
+    rest = session.rest(...)
+    ws = session.websocket(...)
 """
 
 # Define your endpoint URL and subscriptions.
@@ -52,29 +48,46 @@ subs = [
     'instrument_info.100ms.ETHUSD'
 ]
 
-# Connect without authentication!
-ws_unauth = WebSocket(endpoint, subscriptions=subs)
+async def main():
+    # Create callback functions for events
+    async def orderBook(msg):
+        print(msg['topic'])
+        print(msg['data'])
 
-# Connect with authentication!
-ws_auth = WebSocket(
-    endpoint,
-    subscriptions=['position'],
-    api_key='...',
-    api_secret='...'
-)
+    async def instruments(msg):
+        print(msg)
 
-# Let's fetch the orderbook for BTCUSD.
-print(
-    ws_unauth.fetch('orderBookL2_25.BTCUSD')
-)
+    async def position(msg):
+        print(msg)
+        
+    async with Exchange() as session:
+        # Connect without authentication!
+        ws = session.websocket(endpoint, subscriptions=subs)
+        
+        # Let's bind orderbook events to the orderBook function
+        ws.bind('orderBookL2_25.BTCUSD', orderBook)
+        
+        # Let's bind all instrument events to the instruments function
+        ws.bind('instrument_info.100ms.BTCUSD', instruments)
+        ws.bind('instrument_info.100ms.ETHUSD', instruments)
 
-# We can also create a dict containing multiple results.
-print(
-    {i: ws_unauth.fetch(i) for i in subs}
-)
+        # Connect with authentication!
+        ws_auth = session.websocket(
+            endpoint,
+            subscriptions=['position'],
+            api_key='...',
+            api_secret='...'
+        )
 
-# Check on your position. Note that no position data is received until a
-# change in your position occurs (initially, there will be no data).
-print(
-    ws_auth.fetch('position')
-)
+        # Bind position events stream to the position function.
+        # Note that no position data is received until a change
+        # in your position occurs (initially, there will be no data).
+        ws_auth.bind('position', position)
+
+        # Start the streaming events
+        await asyncio.gather(
+            ws.run_forever(),
+            ws_auth.run_forever()
+        )
+
+asyncio.run(main())

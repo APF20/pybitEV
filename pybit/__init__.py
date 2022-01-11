@@ -1,44 +1,82 @@
 # -*- coding: utf-8 -*-
 
 """
-pybit
+pybitEV
 ------------------------
 
-pybit is a lightweight and high-performance API connector for the
-RESTful and WebSocket APIs of the Bybit exchange.
+pybitEV is a lightweight, high-performance and asyncronous API
+connector for the RESTful and WebSocket APIs of the Bybit exchange.
 
 Documentation can be found at
-https://github.com/verata-veritatis/pybit
+https://github.com/APF20/pybit
 
-:copyright: (c) 2020 verata-veritatis
+:copyright: (c) 2020 APF20
 :license: MIT License
 
 """
 
 import time
 import hmac
-import json
-import logging
-import threading
-import requests
-import websocket
+import asyncio
+import aiohttp
 
-from concurrent.futures import ThreadPoolExecutor
+from .exceptions import FailedRequestError, InvalidRequestError, WebSocketException
+from utils import log
 
-from .exceptions import FailedRequestError, InvalidRequestError
+#
+# Helpers
+#
+logger = log.setup_custom_logger('root')
 
-# Requests will use simplejson if available.
-try:
-    from simplejson.errors import JSONDecodeError
-except ImportError:
-    from json.decoder import JSONDecodeError
+VERSION = '3.0.1'
 
-VERSION = '1.2.0'
+
+class Exchange:
+    """
+    Exchange Interface for pybitEV REST and WebSocket API
+    """
+
+    def __init__(self):
+        self.session = aiohttp.ClientSession()
+        self.logger = logger
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *err):
+        await self.exit()
+
+    async def exit(self):
+        """Closes the aiohttp session."""
+        await self.session.close()
+        self.logger.info('Exchange session closed.')
+
+    def rest(self, **kwargs):
+        """
+        Create REST HTTP Object.
+
+        :param kwargs: See HTTP Class.
+        :returns: REST HTTP Object.
+        """
+        return HTTP(self.session, **kwargs)
+
+    def websocket(self, endpoint, **kwargs):
+        """
+        Create WebSocket Object.
+
+        :param kwargs: See WebSocket Class.
+        :returns: REST WebSocket Object.
+        """
+        return WebSocket(self.session, endpoint, **kwargs)
 
 
 class HTTP:
     """
     Connector for Bybit's HTTP API.
+
+    :param session: Required parameter. An aiohttp ClientSession constructed
+        session instance.
+    :type session: obj
 
     :param endpoint: The base endpoint URL of the REST HTTP API, e.g.
         'https://api-testnet.bybit.com'.
@@ -90,18 +128,18 @@ class HTTP:
 
     :param contract_type: The contract type endpoints to use for requests. e.g.
         'linear', 'inverse', 'futures', 'spot'. Can be dynamically changed by
-        using the 'set_contract_type' function.
+        using set_contract_type().
     :type contract_type: str
 
     :returns: pybit.HTTP session.
 
     """
 
-    def __init__(self, endpoint=None, api_key=None, api_secret=None,
-                 logging_level=logging.INFO, log_requests=False,
-                 request_timeout=10, recv_window=5000, force_retry=False,
-                 retry_codes=None, ignore_codes=None, max_retries=3,
-                 retry_delay=3, referral_id=None, contract_type=None):
+    def __init__(self, session, endpoint=None, api_key=None, api_secret=None,
+                 logging_level='INFO', log_requests=False, request_timeout=10,
+                 recv_window=5000, force_retry=False, retry_codes=None,
+                 ignore_codes=None, max_retries=3, retry_delay=3,
+                 referral_id=None, contract_type=None):
 
         """Initializes the HTTP class."""
 
@@ -109,18 +147,7 @@ class HTTP:
         self.url = 'https://api.bybit.com' if not endpoint else endpoint
 
         # Setup logger.
-        self.logger = logging.getLogger(__name__)
-
-        if len(logging.root.handlers) == 0:
-            #no handler on root logger set -> we add handler just for this logger to not mess with custom logic from outside
-            handler = logging.StreamHandler()
-            handler.setFormatter(logging.Formatter(fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                                                   datefmt='%Y-%m-%d %H:%M:%S'
-                                                   )
-                                 )
-            handler.setLevel(logging_level)
-            self.logger.addHandler(handler)
-
+        self.logger = logger
         self.logger.info('Initializing HTTP session.')
         self.log_requests = log_requests
 
@@ -128,8 +155,8 @@ class HTTP:
         self.api_key = api_key
         self.api_secret = api_secret
 
-        # Set timeout.
-        self.timeout = request_timeout
+        # Set timeout to ClientTimeout sentinel.
+        self.timeout = aiohttp.ClientTimeout(sock_read=request_timeout)
         self.recv_window = recv_window
         self.force_retry = force_retry
         self.max_retries = max_retries
@@ -149,27 +176,44 @@ class HTTP:
         # Set whitelist of non-fatal Bybit status codes to ignore.
         self.ignore_codes = {} if not ignore_codes else ignore_codes
 
-        # Initialize requests session.
-        self.client = requests.Session()
-        self.client.headers.update(
-            {
-                'User-Agent': 'pybit-' + VERSION,
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Accept': 'application/json',
-            }
-        )
+        # Set aiohttp client session.
+        self.session = session
+
+        # Set default aiohttp headers.
+        self.headers = {
+            'User-Agent': 'pybit-' + VERSION,
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json'
+        }
 
         # Add referral ID to header.
         if referral_id:
-            self.client.headers.update({'Referer': referral_id})
+            self.headers['Referer'] = self.referral_id
 
         # Set contract type
         self.set_contract_type(contract_type)
 
-    def _exit(self):
-        """Closes the request session."""
-        self.client.close()
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *err):
+        await self.exit()
+
+    async def exit(self):
+        """Closes the aiohttp session."""
+        await self.session.close()
         self.logger.info('HTTP session closed.')
+
+    async def _sem_gather(self, n: int, *aws):
+        """Semaphore async gather with concurrent rate limit"""
+
+        sem = asyncio.BoundedSemaphore(n)
+
+        async def sem_task(task):
+            async with sem:
+                return await task
+
+        return await asyncio.gather(*(sem_task(task) for task in aws))
 
     def set_contract_type(self, type: str):
         """
@@ -179,6 +223,9 @@ class HTTP:
         """
 
         self.contract_type = type
+
+        if type:
+            self.logger.info(f'Using {type} contract type endpoints.')
 
         if type == 'linear':
             self.endpoints = {
@@ -342,7 +389,7 @@ class HTTP:
             'query_subaccount_transfer_list':   '/asset/v1/private/sub-member/transfer/list'
         })
 
-    def orderbook(self, **kwargs):
+    async def orderbook(self, **kwargs):
         """
         Get the orderbook.
 
@@ -351,13 +398,13 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['orderbook'],
             query=kwargs
         )
 
-    def merged_orderbook(self, **kwargs):
+    async def merged_orderbook(self, **kwargs):
         """
         Get the merged orderbook.
 
@@ -366,13 +413,13 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['merged_orderbook'],
             query=kwargs
         )
 
-    def query_kline(self, **kwargs):
+    async def query_kline(self, **kwargs):
         """
         Get kline.
 
@@ -386,13 +433,13 @@ class HTTP:
         if 'from_time' in kwargs:
             kwargs['from'] = kwargs.pop('from_time')
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['query_kline'],
             query=kwargs
         )
 
-    def latest_information_for_symbol(self, **kwargs):
+    async def latest_information_for_symbol(self, **kwargs):
         """
         Get the latest information for symbol.
 
@@ -401,13 +448,13 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['latest_information_for_symbol'],
             query=kwargs
         )
 
-    def last_traded_price(self, **kwargs):
+    async def last_traded_price(self, **kwargs):
         """
         Get the last traded price for symbol.
 
@@ -416,13 +463,13 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['last_traded_price'],
             query=kwargs
         )
 
-    def best_bid_ask_price(self, **kwargs):
+    async def best_bid_ask_price(self, **kwargs):
         """
         Get the best bid and ask prices and quantities for symbol.
 
@@ -431,13 +478,13 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['best_bid_ask_price'],
             query=kwargs
         )
 
-    def public_trading_records(self, **kwargs):
+    async def public_trading_records(self, **kwargs):
         """
         Get recent trades. You can find a complete history of trades on Bybit
         at https://public.bybit.com/.
@@ -452,20 +499,20 @@ class HTTP:
         if 'from_id' in kwargs:
             kwargs['from'] = kwargs.pop('from_id')
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['public_trading_records'],
             query=kwargs
         )
 
-    def query_symbol(self):
+    async def query_symbol(self):
         """
         Get symbol info.
 
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['query_symbol']
         )
@@ -480,7 +527,7 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        self.logger.warning('This endpoint has been removed. Use liquidation websocket')
+        raise Exception('This endpoint has been removed. Use liquidation websocket')
 
         # Replace query param 'from_id' since 'from' keyword is reserved.
         # Temporary workaround until Bybit updates official request params
@@ -493,7 +540,7 @@ class HTTP:
             query=kwargs
         )
 
-    def query_mark_price_kline(self, **kwargs):
+    async def query_mark_price_kline(self, **kwargs):
         """
         Query mark price kline (like query_kline but for mark price).
 
@@ -507,13 +554,13 @@ class HTTP:
         if 'from_time' in kwargs:
             kwargs['from'] = kwargs.pop('from_time')
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['query_mark_price_kline'],
             query=kwargs
         )
 
-    def query_index_price_kline(self, **kwargs):
+    async def query_index_price_kline(self, **kwargs):
         """
         Query index price kline. Index price kline. Tracks BTC spot prices,
         with a frequency of every second.
@@ -528,13 +575,13 @@ class HTTP:
         if 'from_time' in kwargs:
             kwargs['from'] = kwargs.pop('from_time')
  
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['query_index_price_kline'],
             query=kwargs
         )
 
-    def query_premium_index_kline(self, **kwargs):
+    async def query_premium_index_kline(self, **kwargs):
         """
         Query premium index kline. Tracks the premium / discount of BTC
         perpetual contracts relative to the mark price per minute
@@ -549,13 +596,13 @@ class HTTP:
         if 'from_time' in kwargs:
             kwargs['from'] = kwargs.pop('from_time')
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['query_premium_index_kline'],
             query=kwargs
         )
 
-    def open_interest(self, **kwargs):
+    async def open_interest(self, **kwargs):
         """
         Gets the total amount of unsettled contracts. In other words, the total
         number of contracts held in open positions.
@@ -565,13 +612,13 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['open_interest'],
             query=kwargs
         )
 
-    def latest_big_deal(self, **kwargs):
+    async def latest_big_deal(self, **kwargs):
         """
         Obtain filled orders worth more than 500,000 USD within the last 24h.
 
@@ -580,13 +627,13 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['latest_big_deal'],
             query=kwargs
         )
 
-    def long_short_ratio(self, **kwargs):
+    async def long_short_ratio(self, **kwargs):
         """
         Gets the Bybit long-short ratio.
 
@@ -595,13 +642,13 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['long_short_ratio'],
             query=kwargs
         )
 
-    def place_active_order(self, **kwargs):
+    async def place_active_order(self, **kwargs):
         """
         Places an active order.
 
@@ -610,16 +657,16 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['place_active_order'],
             query=kwargs,
             auth=True
         )
 
-    def place_active_order_bulk(self, orders: list, max_in_parallel=10):
+    async def place_active_order_bulk(self, orders: list, max_in_parallel=10):
         """
-        Places multiple active orders in bulk using multithreading. For more
+        Places multiple active orders in bulk using async concurrency. For more
         information on place_active_order, see
         https://bybit-exchange.github.io/docs/inverse/#t-activeorders.
 
@@ -629,17 +676,13 @@ class HTTP:
         :returns: Future request result dictionaries as a list.
         """
 
-        with ThreadPoolExecutor(max_workers=max_in_parallel) as executor:
-            executions = [
-                executor.submit(
-                    self.place_active_order,
-                    **order
-                ) for order in orders
-            ]
-        executor.shutdown()
-        return [execution.result() for execution in executions]
+        res = await self._sem_gather(
+            max_in_parallel,
+            *[self.place_active_order(**order) for order in orders]
+        )
+        return [r for r in res]
 
-    def get_active_order(self, **kwargs):
+    async def get_active_order(self, **kwargs):
         """
         Gets an active order.
 
@@ -648,14 +691,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['get_active_order'],
             query=kwargs,
             auth=True
         )
 
-    def cancel_active_order(self, **kwargs):
+    async def cancel_active_order(self, **kwargs):
         """
         Cancels an active order.
 
@@ -666,14 +709,14 @@ class HTTP:
 
         method = 'DELETE' if self.contract_type == 'spot' else 'POST'
 
-        return self._submit_request(
+        return await self._submit_request(
             method=method,
             path=self.url + self.endpoints['cancel_active_order'],
             query=kwargs,
             auth=True
         )
 
-    def fast_cancel_active_order(self, **kwargs):
+    async def fast_cancel_active_order(self, **kwargs):
         """
         Cancels an active order.
 
@@ -682,16 +725,16 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='DELETE',
             path=self.url + self.endpoints['fast_cancel_active_order'],
             query=kwargs,
             auth=True
         )
 
-    def cancel_active_order_bulk(self, orders: list, max_in_parallel=10):
+    async def cancel_active_order_bulk(self, orders: list, max_in_parallel=10):
         """
-        Cancels multiple active orders in bulk using multithreading. For more
+        Cancels multiple active orders in bulk using async concurrency. For more
         information on cancel_active_order, see
         https://bybit-exchange.github.io/docs/inverse/#t-activeorders.
 
@@ -701,17 +744,13 @@ class HTTP:
         :returns: Future request result dictionaries as a list.
         """
 
-        with ThreadPoolExecutor(max_workers=max_in_parallel) as executor:
-            executions = [
-                executor.submit(
-                    self.cancel_active_order,
-                    **order
-                ) for order in orders
-            ]
-        executor.shutdown()
-        return [execution.result() for execution in executions]
+        res = await self._sem_gather(
+            max_in_parallel,
+            *[self.cancel_active_order(**order) for order in orders]
+        )
+        return [r for r in res]
 
-    def cancel_all_active_orders(self, **kwargs):
+    async def cancel_all_active_orders(self, **kwargs):
         """
         Cancel all active orders that are unfilled or partially filled. Fully
         filled orders cannot be cancelled.
@@ -721,14 +760,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['cancel_all_active_orders'],
             query=kwargs,
             auth=True
         )
 
-    def batch_cancel_active_order(self, **kwargs):
+    async def batch_cancel_active_order(self, **kwargs):
         """
         Cancel all active orders by symbol, side and orderTypes.
 
@@ -737,14 +776,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='DELETE',
             path=self.url + self.endpoints['batch_cancel_active_order'],
             query=kwargs,
             auth=True
         )
 
-    def batch_fast_cancel_active_order(self, **kwargs):
+    async def batch_fast_cancel_active_order(self, **kwargs):
         """
         Fast cancel all active orders by symbol, side and orderTypes.
 
@@ -753,14 +792,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='DELETE',
             path=self.url + self.endpoints['batch_fast_cancel_active_order'],
             query=kwargs,
             auth=True
         )
 
-    def batch_cancel_active_order_by_ids(self, **kwargs):
+    async def batch_cancel_active_order_by_ids(self, **kwargs):
         """
         Cancel active orders by matching orderIds.
 
@@ -769,14 +808,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='DELETE',
             path=self.url + self.endpoints['batch_cancel_active_order_by_ids'],
             query=kwargs,
             auth=True
         )
 
-    def replace_active_order(self, **kwargs):
+    async def replace_active_order(self, **kwargs):
         """
         Replace order can modify/amend your active orders.
 
@@ -785,16 +824,16 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['replace_active_order'],
             query=kwargs,
             auth=True
         )
 
-    def replace_active_order_bulk(self, orders: list, max_in_parallel=10):
+    async def replace_active_order_bulk(self, orders: list, max_in_parallel=10):
         """
-        Replaces multiple active orders in bulk using multithreading. For more
+        Replaces multiple active orders in bulk using async concurrency. For more
         information on replace_active_order, see
         https://bybit-exchange.github.io/docs/inverse/#t-replaceactive.
 
@@ -804,17 +843,13 @@ class HTTP:
         :returns: Future request result dictionaries as a list.
         """
 
-        with ThreadPoolExecutor(max_workers=max_in_parallel) as executor:
-            executions = [
-                executor.submit(
-                    self.replace_active_order,
-                    **order
-                ) for order in orders
-            ]
-        executor.shutdown()
-        return [execution.result() for execution in executions]
+        res = await self._sem_gather(
+            max_in_parallel,
+            *[self.replace_active_order(**order) for order in orders]
+        )
+        return [r for r in res]
 
-    def query_active_order(self, **kwargs):
+    async def query_active_order(self, **kwargs):
         """
         Query real-time active order information. For spot contracts
             use get_active_order() or open_orders() as 'orderId' param
@@ -825,14 +860,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['query_active_order'],
             query=kwargs,
             auth=True
         )
 
-    def open_orders(self, **kwargs):
+    async def open_orders(self, **kwargs):
         """
         Get open active order information.
 
@@ -841,14 +876,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['open_orders'],
             query=kwargs,
             auth=True
         )
 
-    def order_history(self, **kwargs):
+    async def order_history(self, **kwargs):
         """
         Get order history information.
 
@@ -857,14 +892,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['order_history'],
             query=kwargs,
             auth=True
         )
 
-    def place_conditional_order(self, **kwargs):
+    async def place_conditional_order(self, **kwargs):
         """
         Places a conditional order. For more information, see
         https://bybit-exchange.github.io/docs/inverse/#t-placecond.
@@ -874,16 +909,16 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['place_conditional_order'],
             query=kwargs,
             auth=True
         )
 
-    def place_conditional_order_bulk(self, orders: list, max_in_parallel=10):
+    async def place_conditional_order_bulk(self, orders: list, max_in_parallel=10):
         """
-        Places multiple conditional orders in bulk using multithreading. For
+        Places multiple conditional orders in bulk using async concurrency. For
         more information on place_active_order, see
         https://bybit-exchange.github.io/docs/inverse/#t-placecond.
 
@@ -893,17 +928,13 @@ class HTTP:
         :returns: Future request result dictionaries as a list.
         """
 
-        with ThreadPoolExecutor(max_workers=max_in_parallel) as executor:
-            executions = [
-                executor.submit(
-                    self.place_conditional_order,
-                    **order
-                ) for order in orders
-            ]
-        executor.shutdown()
-        return [execution.result() for execution in executions]
+        res = await self._sem_gather(
+            max_in_parallel,
+            *[self.place_conditional_order(**order) for order in orders]
+        )
+        return [r for r in res]
 
-    def get_conditional_order(self, **kwargs):
+    async def get_conditional_order(self, **kwargs):
         """
         Gets a conditional order. For more information, see
         https://bybit-exchange.github.io/docs/inverse/#t-getcond.
@@ -913,14 +944,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['get_conditional_order'],
             query=kwargs,
             auth=True
         )
 
-    def cancel_conditional_order(self, **kwargs):
+    async def cancel_conditional_order(self, **kwargs):
         """
         Cancels a conditional order. For more information, see
         https://bybit-exchange.github.io/docs/inverse/#t-cancelcond.
@@ -930,16 +961,16 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['cancel_conditional_order'],
             query=kwargs,
             auth=True
         )
 
-    def cancel_conditional_order_bulk(self, orders: list, max_in_parallel=10):
+    async def cancel_conditional_order_bulk(self, orders: list, max_in_parallel=10):
         """
-        Cancels multiple conditional orders in bulk using multithreading. For
+        Cancels multiple conditional orders in bulk using async concurrency. For
         more information on cancel_active_order, see
         https://bybit-exchange.github.io/docs/inverse/#t-cancelcond.
 
@@ -949,17 +980,13 @@ class HTTP:
         :returns: Future request result dictionaries as a list.
         """
 
-        with ThreadPoolExecutor(max_workers=max_in_parallel) as executor:
-            executions = [
-                executor.submit(
-                    self.cancel_conditional_order,
-                    **order
-                ) for order in orders
-            ]
-        executor.shutdown()
-        return [execution.result() for execution in executions]
+        res = await self._sem_gather(
+            max_in_parallel,
+            *[self.cancel_conditional_order(**order) for order in orders]
+        )
+        return [r for r in res]
 
-    def cancel_all_conditional_orders(self, **kwargs):
+    async def cancel_all_conditional_orders(self, **kwargs):
         """
         Cancel all conditional orders that are unfilled or partially filled.
         Fully filled orders cannot be cancelled.
@@ -969,14 +996,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['cancel_all_conditional_orders'],
             query=kwargs,
             auth=True
         )
 
-    def replace_conditional_order(self, **kwargs):
+    async def replace_conditional_order(self, **kwargs):
         """
         Replace conditional order can modify/amend your conditional orders.
 
@@ -985,16 +1012,16 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['replace_conditional_order'],
             query=kwargs,
             auth=True
         )
 
-    def replace_conditional_order_bulk(self, orders: list, max_in_parallel=10):
+    async def replace_conditional_order_bulk(self, orders: list, max_in_parallel=10):
         """
-        Replaces multiple conditional orders in bulk using multithreading. For
+        Replaces multiple conditional orders in bulk using async concurrency. For
         more information on replace_active_order, see
         https://bybit-exchange.github.io/docs/inverse/#t-replacecond.
 
@@ -1004,17 +1031,13 @@ class HTTP:
         :returns: Future request result dictionaries as a list.
         """
 
-        with ThreadPoolExecutor(max_workers=max_in_parallel) as executor:
-            executions = [
-                executor.submit(
-                    self.replace_conditional_order,
-                    **order
-                ) for order in orders
-            ]
-        executor.shutdown()
-        return [execution.result() for execution in executions]
+        res = await self._sem_gather(
+            max_in_parallel,
+            *[self.replace_conditional_order(**order) for order in orders]
+        )
+        return [r for r in res]
 
-    def query_conditional_order(self, **kwargs):
+    async def query_conditional_order(self, **kwargs):
         """
         Query real-time conditional order information.
 
@@ -1023,14 +1046,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['query_conditional_order'],
             query=kwargs,
             auth=True
         )
 
-    def my_position(self, **kwargs):
+    async def my_position(self, **kwargs):
         """
         Get my position list.
 
@@ -1039,14 +1062,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['my_position'],
             query=kwargs,
             auth=True
         )
 
-    def set_auto_add_margin(self, **kwargs):
+    async def set_auto_add_margin(self, **kwargs):
         """
         For linear markets only. Set auto add margin, or Auto-Margin
         Replenishment.
@@ -1056,14 +1079,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['set_auto_add_margin'],
             query=kwargs,
             auth=True
         )
 
-    def set_leverage(self, **kwargs):
+    async def set_leverage(self, **kwargs):
         """
         Change user leverage.
 
@@ -1075,14 +1098,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['set_leverage'],
             query=kwargs,
             auth=True
         )
 
-    def cross_isolated_margin_switch(self, **kwargs):
+    async def cross_isolated_margin_switch(self, **kwargs):
         """
         Switch Cross/Isolated; must be leverage value when switching from Cross
         to Isolated.
@@ -1092,14 +1115,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['cross_isolated_margin_switch'],
             query=kwargs,
             auth=True
         )
 
-    def position_mode_switch(self, **kwargs):
+    async def position_mode_switch(self, **kwargs):
         """
         If you are in One-Way Mode, you can only open one position on Buy or
         Sell side;
@@ -1111,14 +1134,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['position_mode_switch'],
             query=kwargs,
             auth=True
         )
 
-    def full_partial_position_tp_sl_switch(self, **kwargs):
+    async def full_partial_position_tp_sl_switch(self, **kwargs):
         """
         Switch mode between Full or Partial
         :param kwargs: See
@@ -1126,14 +1149,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['full_partial_position_tp_sl_switch'],
             query=kwargs,
             auth=True
         )
 
-    def change_margin(self, **kwargs):
+    async def change_margin(self, **kwargs):
         """
         Update margin.
 
@@ -1142,14 +1165,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['change_margin'],
             query=kwargs,
             auth=True
         )
 
-    def set_trading_stop(self, **kwargs):
+    async def set_trading_stop(self, **kwargs):
         """
         Set take profit, stop loss, and trailing stop for your open position.
 
@@ -1158,14 +1181,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['set_trading_stop'],
             query=kwargs,
             auth=True
         )
 
-    def add_reduce_margin(self, **kwargs):
+    async def add_reduce_margin(self, **kwargs):
         """
         For linear markets only. Add margin.
 
@@ -1174,14 +1197,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['add_reduce_margin'],
             query=kwargs,
             auth=True
         )
 
-    def change_user_leverage(self, **kwargs):
+    async def change_user_leverage(self, **kwargs):
         """
         Change user leverage.
 
@@ -1192,14 +1215,14 @@ class HTTP:
 
         self.logger.warning('This endpoint is deprecated and will be removed. Use set_leverage()')
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['change_user_leverage'],
             query=kwargs,
             auth=True
         )
 
-    def user_trade_records(self, **kwargs):
+    async def user_trade_records(self, **kwargs):
         """
         Get user's trading records. The results are ordered in ascending order
         (the first item is the oldest).
@@ -1209,14 +1232,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['user_trade_records'],
             query=kwargs,
             auth=True
         )
 
-    def closed_profit_and_loss(self, **kwargs):
+    async def closed_profit_and_loss(self, **kwargs):
         """
         Get user's closed profit and loss records. The results are ordered in
         descending order (the first item is the latest).
@@ -1226,14 +1249,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['closed_profit_and_loss'],
             query=kwargs,
             auth=True
         )
 
-    def get_risk_limit(self, **kwargs):
+    async def get_risk_limit(self, **kwargs):
         """
         Get risk limit.
 
@@ -1245,14 +1268,14 @@ class HTTP:
         if kwargs.get('is_linear') in (False, True):
             self.logger.warning("The is_linear argument is obsolete.")
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['get_risk_limit'],
             query=kwargs,
             auth=True
         )
 
-    def set_risk_limit(self, **kwargs):
+    async def set_risk_limit(self, **kwargs):
         """
         Set risk limit.
 
@@ -1261,14 +1284,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['set_risk_limit'],
             query=kwargs,
             auth=True
         )
 
-    def get_the_last_funding_rate(self, **kwargs):
+    async def get_the_last_funding_rate(self, **kwargs):
         """
         The funding rate is generated every 8 hours at 00:00 UTC, 08:00 UTC and
         16:00 UTC. For example, if a request is sent at 12:00 UTC, the funding
@@ -1279,13 +1302,13 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['get_the_last_funding_rate'],
             query=kwargs
         )
 
-    def my_last_funding_fee(self, **kwargs):
+    async def my_last_funding_fee(self, **kwargs):
         """
         Funding settlement occurs every 8 hours at 00:00 UTC, 08:00 UTC and
         16:00 UTC. The current interval's fund fee settlement is based on the
@@ -1298,14 +1321,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['my_last_funding_fee'],
             query=kwargs,
             auth=True
         )
 
-    def predicted_funding_rate(self, **kwargs):
+    async def predicted_funding_rate(self, **kwargs):
         """
         Get predicted funding rate and my funding fee.
 
@@ -1314,27 +1337,27 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['predicted_funding_rate'],
             query=kwargs,
             auth=True
         )
 
-    def api_key_info(self):
+    async def api_key_info(self):
         """
         Get user's API key info.
 
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['api_key_info'],
             auth=True
         )
 
-    def lcp_info(self, **kwargs):
+    async def lcp_info(self, **kwargs):
         """
         Get user's LCP (data refreshes once an hour). Only supports inverse
         perpetual at present. See
@@ -1346,14 +1369,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['lcp_info'],
             query=kwargs,
             auth=True
         )
 
-    def get_wallet_balance(self, **kwargs):
+    async def get_wallet_balance(self, **kwargs):
         """
         Get wallet balance info.
 
@@ -1362,14 +1385,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['get_wallet_balance'],
             query=kwargs,
             auth=True
         )
 
-    def wallet_fund_records(self, **kwargs):
+    async def wallet_fund_records(self, **kwargs):
         """
         Get wallet fund records. This endpoint also shows exchanges from the
         Asset Exchange, where the types for the exchange are
@@ -1385,14 +1408,14 @@ class HTTP:
         if 'from_id' in kwargs:
             kwargs['from'] = kwargs.pop('from_id')
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['wallet_fund_records'],
             query=kwargs,
             auth=True
         )
 
-    def withdraw_records(self, **kwargs):
+    async def withdraw_records(self, **kwargs):
         """
         Get withdrawal records.
 
@@ -1401,14 +1424,14 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['withdraw_records'],
             query=kwargs,
             auth=True
         )
 
-    def asset_exchange_records(self, **kwargs):
+    async def asset_exchange_records(self, **kwargs):
         """
         Get asset exchange records.
 
@@ -1417,33 +1440,33 @@ class HTTP:
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['asset_exchange_records'],
             query=kwargs,
             auth=True
         )
 
-    def server_time(self):
+    async def server_time(self):
         """
         Get Bybit server time.
 
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['server_time']
         )
 
-    def announcement(self):
+    async def announcement(self):
         """
         Get Bybit OpenAPI announcements in the last 30 days by reverse order.
 
         :returns: Request results as dictionary.
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['announcement']
         )
@@ -1454,7 +1477,7 @@ class HTTP:
     function and are exclusive to pybit.
     '''
 
-    def close_position(self, symbol):
+    async def close_position(self, symbol):
         """
         Closes your open position. Makes two requests (position, order).
 
@@ -1468,7 +1491,7 @@ class HTTP:
 
         # First we fetch the user's position.
         try:
-            r = self.my_position(symbol=symbol)['result']
+            r = (await self.my_position(symbol=symbol))['result']
 
         # If there is no returned position, we want to handle that.
         except KeyError:
@@ -1491,70 +1514,71 @@ class HTTP:
             return self.logger.error('No position detected.')
 
         # Submit a market order against each open position for the same qty.
-        return self.place_active_order_bulk(orders)
+        return await self.place_active_order_bulk(orders)
 
     '''
     Below are methods under https://bybit-exchange.github.io/docs/account_asset
     '''
-    def create_internal_transfer(self, **kwargs):
+
+    async def create_internal_transfer(self, **kwargs):
         """
         Create internal transfer. For more information, see
         https://bybit-exchange.github.io/docs/account_asset/#t-transfer
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['create_internal_transfer'],
             query=kwargs,
             auth=True
         )
 
-    def create_subaccount_transfer(self, **kwargs):
+    async def create_subaccount_transfer(self, **kwargs):
         """
         Create internal transfer. For more information, see
         https://bybit-exchange.github.io/docs/account_asset/#t-transfer
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['create_subaccount_transfer'],
             query=kwargs,
             auth=True
         )
 
-    def query_transfer_list(self, **kwargs):
+    async def query_transfer_list(self, **kwargs):
         """
         Create internal transfer. For more information, see
         https://bybit-exchange.github.io/docs/account_asset/#t-transfer
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['query_transfer_list'],
             query=kwargs,
             auth=True
         )
 
-    def query_subaccount_list(self):
+    async def query_subaccount_list(self):
         """
         Create internal transfer. For more information, see
         https://bybit-exchange.github.io/docs/account_asset/#t-transfer
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['query_subaccount_list'],
             query={},
             auth=True
         )
 
-    def query_subaccount_transfer_list(self,**kwargs):
+    async def query_subaccount_transfer_list(self,**kwargs):
         """
         Create internal transfer. For more information, see
         https://bybit-exchange.github.io/docs/account_asset/#t-transfer
         """
 
-        return self._submit_request(
+        return await self._submit_request(
             method='GET',
             path=self.url + self.endpoints['query_subaccount_transfer_list'],
             query=kwargs,
@@ -1606,15 +1630,15 @@ class HTTP:
             bytes(_val, 'utf-8'), digestmod='sha256'
         ).hexdigest())
 
-    def _submit_request(self, method=None, path=None, query=None, auth=False):
+    async def _submit_request(self, method=None, path=None, query=None, auth=False):
         """
         Submits the request to the API.
 
         Notes
         -------------------
-        We use the params argument for the GET method, and data argument for
-        the POST method. Dicts passed to the data argument must be
-        JSONified prior to submitting request.
+        We use the params argument for the GET method, and json argument for
+        the POST method. Dicts passed to the json argument are automatically
+        JSONified, by ClientSession handler, prior to submitting request.
 
         """
 
@@ -1673,61 +1697,57 @@ class HTTP:
             if self.log_requests:
                 self.logger.info(f'Request -> {method} {path}: {req_params}')
 
-            # Prepare request; use 'params' for GET and 'data' for POST.
+            # Prepare request; use 'params' for GET and 'json' for POST.
+            r = {'headers': self.headers}
+
             if method == 'GET':
-                r = self.client.prepare_request(
-                    requests.Request(method, path, params=req_params)
-                )
+                r['params'] = req_params
             else:
                 if self.contract_type == 'spot':
                     full_param_str = '&'.join(
                         [str(k) + '=' + str(v) for k, v in
                          sorted(query.items()) if v is not None]
                     )
-                    r = self.client.prepare_request(
-                        requests.Request(method, path + f"?{full_param_str}")
-                    )
+                    path += f"?{full_param_str}"
                 else:
-                    headers = {'Content-Type': 'application/json'}
-                    r = self.client.prepare_request(
-                        requests.Request(method, path, headers=headers,
-                                         data=json.dumps(req_params))
-                    )
+                    r['headers']['Content-Type'] = 'application/json'
+                    r['json'] = req_params
 
             # Attempt the request.
             try:
-                s = self.client.send(r, timeout=self.timeout)
+                async with self.session.request(
+                    method, path, **r, timeout=self.timeout
+                ) as s:
+
+                    # Convert response to dictionary, or raise if requests error.
+                    try:
+                        s_json = await s.json()
+
+                    # If we have trouble converting, handle the error and retry.
+                    except aiohttp.client_exceptions.ContentTypeError as e:
+                        if self.force_retry:
+                            self.logger.error(f'{e}. {retries_remaining}')
+                            await asyncio.sleep(self.retry_delay)
+                            continue
+                        else:
+                            raise FailedRequestError(
+                                request=f'{method} {path}: {req_params}',
+                                message='Conflict. Could not decode JSON.',
+                                status_code=409,
+                                time = time.strftime("%H:%M:%S", time.gmtime())
+                            )
 
             # If requests fires an error, retry.
             except (
-                requests.exceptions.ReadTimeout,
-                requests.exceptions.SSLError,
-                requests.exceptions.ConnectionError
+                aiohttp.client_exceptions.ClientConnectorError,
+                aiohttp.client_exceptions.ServerConnectionError
             ) as e:
                 if self.force_retry:
                     self.logger.error(f'{e}. {retries_remaining}')
-                    time.sleep(self.retry_delay)
+                    await asyncio.sleep(self.retry_delay)
                     continue
                 else:
                     raise e
-
-            # Convert response to dictionary, or raise if requests error.
-            try:
-                s_json = s.json()
-
-            # If we have trouble converting, handle the error and retry.
-            except JSONDecodeError as e:
-                if self.force_retry:
-                    self.logger.error(f'{e}. {retries_remaining}')
-                    time.sleep(self.retry_delay)
-                    continue
-                else:
-                    raise FailedRequestError(
-                        request=f'{method} {path}: {req_params}',
-                        message='Conflict. Could not decode JSON.',
-                        status_code=409,
-                        time = time.strftime("%H:%M:%S", time.gmtime())
-                    )
 
             # If Bybit returns an error, raise.
             if s_json['ret_code']:
@@ -1767,11 +1787,13 @@ class HTTP:
                             f'Sleeping for {err_delay} seconds'
                         )
 
-
                     # Log the error.
                     self.logger.error(f'{error_msg}. {retries_remaining}')
-                    time.sleep(err_delay)
+                    await asyncio.sleep(err_delay)
                     continue
+
+                elif s_json['ret_code'] in self.ignore_codes:
+                    pass
 
                 else:
                     raise InvalidRequestError(
@@ -1787,44 +1809,39 @@ class HTTP:
 class WebSocket:
     """
     Connector for Bybit's WebSocket API.
+
+    :param session: Required parameter. An aiohttp ClientSession constructed
+        session instance.
+    :param endpoint: Required parameter. The endpoint of the remote
+        websocket.
+    :param api_key: Your API key. Required for authenticated endpoints.
+        Defaults to None.
+    :param api_secret: Your API secret key. Required for authenticated
+        endpoints. Defaults to None.
+    :param subscriptions: A list of desired topics to subscribe to. See API
+        documentation for more information. Defaults to an empty list, which
+        will raise an error.
+    :param logging_level: The logging level of the built-in logger. Defaults
+        to logging.INFO. Options are CRITICAL (50), ERROR (40),
+        WARNING (30), INFO (20), DEBUG (10), or NOTSET (0).
+    :param ping_interval: The number of seconds between each automated ping.
+        Pong timeout is based on ping_interval/2.
+    :param restart_on_error: Whether or not the connection should restart on
+        error.
+    :param contract_type: The contract type endpoints to use for requests. e.g.
+        'linear', 'inverse', 'futures', 'spot'. Can be dynamically changed by
+        using set_contract_type().
+
+    :returns: WebSocket session.
     """
 
-    def __init__(self, endpoint, api_key=None, api_secret=None,
-                 subscriptions=None, logging_level=logging.INFO,
-                 max_data_length=200, ping_interval=30, ping_timeout=10,
-                 restart_on_error=True, purge_on_fetch=True,
-                 trim_data=True):
+    def __init__(self, session, endpoint, api_key=None, api_secret=None,
+                 subscriptions=None, logging_level='INFO', ping_interval=30,
+                 restart_on_error=True, contract_type=None):
+
         """
         Initializes the websocket session.
 
-        :param endpoint: Required parameter. The endpoint of the remote
-            websocket.
-        :param api_key: Your API key. Required for authenticated endpoints.
-            Defaults to None.
-        :param api_secret: Your API secret key. Required for authenticated
-            endpoints. Defaults to None.
-        :param subscriptions: A list of desired topics to subscribe to. See API
-            documentation for more information. Defaults to an empty list, which
-            will raise an error.
-        :param logging_level: The logging level of the built-in logger. Defaults
-            to logging.INFO. Options are CRITICAL (50), ERROR (40),
-            WARNING (30), INFO (20), DEBUG (10), or NOTSET (0).
-        :param max_data_length: The maximum number of rows for the stored
-            dataset. A smaller number will prevent performance or memory issues.
-        :param ping_interval: The number of seconds between each automated ping.
-        :param ping_timeout: The number of seconds to wait for 'pong' before an
-            Exception is raised.
-        :param restart_on_error: Whether or not the connection should restart on
-            error.
-        :param purge_on_fetch: Whether or not stored data should be purged each
-            fetch. For example, if the user subscribes to the 'trade' topic, and
-            fetches, should the data show all trade history up to the maximum
-            length or only get the data since the last fetch?
-        :param trim_data: Decide whether the returning data should be
-            trimmed to only provide the data value. Not compatible with Delta
-            style topics.
-
-        :returns: WebSocket session.
         """
 
         if not subscriptions:
@@ -1849,18 +1866,7 @@ class WebSocket:
         self.wsName = 'Authenticated' if api_key else 'Non-Authenticated'
 
         # Setup logger.
-        self.logger = logging.getLogger(__name__)
-
-        if len(logging.root.handlers) == 0:
-            #no handler on root logger set -> we add handler just for this logger to not mess with custom logic from outside
-            handler = logging.StreamHandler()
-            handler.setFormatter(logging.Formatter(fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                                                   datefmt='%Y-%m-%d %H:%M:%S'
-                                                   )
-                                 )
-            handler.setLevel(logging_level)
-            self.logger.addHandler(handler)
-
+        self.logger = logger
         self.logger.info(f'Initializing {self.wsName} WebSocket.')
 
         # Ensure authentication for private topics.
@@ -1874,6 +1880,12 @@ class WebSocket:
             raise PermissionError('You must be authorized to use '
                                   'private topics!')
 
+        # Set aiohttp client session.
+        self.session = session
+
+        # Set contract type
+        self.contract_type = contract_type
+
         # Set endpoint.
         self.endpoint = endpoint
 
@@ -1883,74 +1895,38 @@ class WebSocket:
 
         # Set topic subscriptions for WebSocket.
         self.subscriptions = subscriptions
-        self.max_length = max_data_length
 
         # Set ping settings.
         self.ping_interval = ping_interval
-        self.ping_timeout = ping_timeout
 
         # Other optional data handling settings.
         self.handle_error = restart_on_error
-        self.purge = purge_on_fetch
-        self.trim = trim_data
+
+        # Initialize handlers dictionary
+        self.handlers = {}
 
         # Set initial state, initialize dictionary and connnect.
         self._reset()
-        self._connect(self.endpoint)
 
-    def fetch(self, topic):
-        """
-        Fetches data from the subscribed topic.
-
-        :param topic: Required parameter. The subscribed topic to poll.
-        :returns: Filtered data as dict.
-        """
-
-        # If topic isn't a string.
-        if not isinstance(topic, str):
-            self.logger.error('Topic argument must be a string.')
-            return
-
-        # If the topic given isn't in the initial subscribed list.
-        if topic not in self.subscriptions:
-            self.logger.error(f'You aren\'t subscribed to the {topic} topic.')
-            return
-
-        # Pop all trade or execution data on each poll.
-        # dont pop order or stop_order data as we will lose valuable state
-        if topic.startswith((
-                'trade',
-                'execution'
-        )) and not topic.startswith('orderBook'):
-            data = self.data[topic].copy()
-            if self.purge:
-                self.data[topic] = []
-            return data
-        else:
-            try:
-                return self.data[topic]
-            except KeyError:
-                return []
-
-    def ping(self):
+    async def ping(self):
         """
         Pings the remote server to test the connection. The status of the
         connection can be monitored using ws.ping().
         """
 
-        self.ws.send(json.dumps({'op': 'ping'}))
+        await self.ws.send_json({'op': 'ping'})
 
-    def exit(self):
+    async def exit(self):
         """
         Closes the websocket connection.
         """
 
-        self.ws.close()
-        while self.ws.sock:
-            continue
+        if self.ws:
+            await self.ws.close()
         self.exited = True
+        self.ws = None
 
-    def _auth(self):
+    async def _auth(self):
         """
         Authorize websocket connection.
         """
@@ -1966,233 +1942,151 @@ class WebSocket:
         ).hexdigest())
 
         # Authenticate with API.
-        self.ws.send(
-            json.dumps({
-                'op': 'auth',
-                'args': [self.api_key, expires, signature]
-            })
-        )
+        await self.ws.send_json({
+            'op': 'auth',
+            'args': [self.api_key, expires, signature]
+        })
 
-    def _connect(self, url):
+    async def _connect(self):
         """
         Open websocket in a thread.
         """
 
-        self.ws = websocket.WebSocketApp(
-            url=url,
-            on_message=self._on_message,
-            on_close=self._on_close,
-            on_open=self._on_open,
-            on_error=self._on_error
-        )
-
-        # Setup the thread running WebSocketApp.
-        self.wst = threading.Thread(target=lambda: self.ws.run_forever(
-            ping_interval=self.ping_interval,
-            ping_timeout=self.ping_timeout
-        ))
-
-        # Configure as daemon; start.
-        self.wst.daemon = True
-        self.wst.start()
-
         # Attempt to connect for X seconds.
         retries = 10
-        while retries > 0 and (not self.ws.sock or not self.ws.sock.connected):
-            retries -= 1
-            time.sleep(1)
+        while retries > 0:
+
+            # Connect to WebSocket.
+            try:
+                self.ws = await self.session.ws_connect(
+                    self.endpoint,
+                    heartbeat=self.ping_interval
+                )
+                self._on_open()
+
+            # Handle errors during connection phase.
+            except(
+                aiohttp.client_exceptions.WSServerHandshakeError,
+                aiohttp.client_exceptions.ClientConnectorError
+            ) as e:
+                self.logger.error(
+                    f'WebSocket connection {type(e).__name__}: {e}'
+                )
+                retries -= 1
+
+            else:
+                break
+
+            await asyncio.sleep(1)
+
 
         # If connection was not successful, raise error.
         if retries <= 0:
-            self.exit()
-            raise websocket.WebSocketTimeoutException('Connection failed.')
+             raise WebSocketException(e)
 
         # If given an api_key, authenticate.
         if self.api_key and self.api_secret:
-            self._auth()
+            await self._auth()
+
+        # Subscribe to websocket topics.
+        await self._subscribe()
+
+    async def _subscribe(self):
+        """
+        Subscribe to websocket topics.
+        """
 
         # Check if subscriptions is a list.
         if isinstance(self.subscriptions, str):
             self.subscriptions = [self.subscriptions]
 
         # Subscribe to the requested topics.
-        self.ws.send(
-            json.dumps({
-                'op': 'subscribe',
-                'args': self.subscriptions
-            })
-        )
+        await self.ws.send_json({
+            'op': 'subscribe',
+            'args': self.subscriptions
+        })
 
-        # Initialize the topics.
-        for topic in self.subscriptions:
-            if topic not in self.data:
-                self.data[topic] = {}
-
-    @staticmethod
-    def _find_index(source, target, key):
+    async def _consume(self):
         """
-        Find the index in source list of the targeted ID.
-        """
-        return next(i for i, j in enumerate(source) if j[key] == target[key])
-
-    def _on_message(self, message):
-        """
-        Parse incoming messages. Similar structure to the
-        official WS connector.
+        Consumer to parse incoming messages and emit to binded functions.
         """
 
-        # Load dict of message.
-        msg_json = json.loads(message)
+        while 1:
+            msg_json = await self.ws.receive_json()
 
-        # If 'success' exists
-        if 'success' in msg_json:
-            if msg_json['success']:
+            if self.ws.closed:
+                raise WebsocketException(f'WebSocket {self.wsName} connection down')
 
-                # If 'request' exists.
-                if 'request' in msg_json:
+            if 'topic' in msg_json:
+                await self._emit(msg_json['topic'], msg_json)
 
-                    # If we get succesful auth, notify user.
-                    if msg_json['request']['op'] == 'auth':
-                        self.logger.info('Authorization successful.')
-                        self.auth = True
+            elif 'success' in msg_json:
+                if msg_json['success']:
+                    # If 'request' exists.
+                    if 'request' in msg_json:
+                        if msg_json['request']['op'] == 'auth':
+                            self.logger.info('Authorization successful.')
+                            self.auth = True
 
-                    # If we get successful subscription, notify user.
-                    if msg_json['request']['op'] == 'subscribe':
-                        sub = msg_json['request']['args']
-                        self.logger.info(f'Subscription to {sub} successful.')
-            else:
-                response = msg_json['ret_msg']
-                if 'unknown topic' in response:
-                    self.logger.error('Couldn\'t subscribe to topic.'
-                                      f' Error: {response}.')
+                        elif msg_json['request']['op'] == 'subscribe':
+                            sub = msg_json['request']['args']
+                            self.logger.info(f'Subscription to {sub} successful.')
+                else:
+                    if 'unknown topic' in msg_json['ret_msg']:
+                        self.logger.error('Couldn\'t subscribe to topic.'
+                                          f' Error: {msg_json["ret_msg"]}.')
 
-                # If we get unsuccesful auth, notify user.
-                elif msg_json['request']['op'] == 'auth':
-                    self.logger.info('Authorization failed. Please check your '
-                                     'API keys and restart.')
+                    elif msg_json['request']['op'] == 'auth':
+                        self.logger.error('Authorization failed. Please check your '
+                                         'API keys and restart.')
 
-        elif 'topic' in msg_json:
+    async def _emit(self, topic: str, msg):
+        """
+        Send message data events to binded callback functions.
 
-            topic = msg_json['topic']
+        :param topic: Required. Subscription topic.
+        :param msg: Required. Message event json data.
+        """
+        try:
+            await self.handlers[topic](msg)
+        except KeyError:
+            self.logger.warning(f'{topic} message event received has no binded function!')
 
-            # For incoming 'orderbookL2_25.x.x' and 'orderBook_200.x.x' data.
-            if any(i in topic for i in {'orderBookL2_25', 'orderBook_200'}):
+    def bind(self, topic, func):
+        """
+        Bind functions by topic to local object to handle websocket message events.
 
-                # Make updates according to delta response.
-                if 'delta' in msg_json['type']:
+        :param topic: Required. Subscription topic.
+        :param func: Required. Callback Function to handle processing of events.
+        """
+        # Bind function handler to topic events.
+        if topic in self.subscriptions:
+            self.handlers[topic] = func
+        else:
+            raise WebSocketException(f'{topic} is not a valid bind topic!')
 
-                    # Delete.
-                    for entry in msg_json['data']['delete']:
-                        del self.data[topic][entry['side']][entry['id']]
+    def unbind(self, topic):
+        """
+        UnBind functions from local websocket message events.
 
-                    # Updates and Inserts (in order).
-                    for entry in [
-                        *msg_json['data']['update'], *msg_json['data']['insert']
-                    ]:
-                        self.data[topic][entry['side']][entry['id']] = entry
+        :param topic: Required. Subscription topic.
+        """
+        del self.handlers[topic]
 
-                # Record the initial snapshot.
-                elif 'snapshot' in msg_json['type']:
-
-                    data = msg_json['data']['order_book'] if(
-                        'order_book' in msg_json['data']) else msg_json['data']
-
-                    for entry in data:
-                        try:
-                            self.data[topic][entry['side']][entry['id']] = entry
-                        except KeyError:
-                            self.data[topic][entry['side']] = {entry['id']: entry}
-
-                # Record message timestamp
-                self.data[topic]['timestamp_e6'] = msg_json['timestamp_e6']
-
-            # For incoming 'order' and 'stop_order' data.
-            elif topic in {'order', 'stop_order'}:
-
-                # record incoming data  
-                for i in msg_json['data']:
-                    try:
-                        # update existing entries
-                        # temporary workaround for field anomaly in stop_order data
-                        ord_id = topic + '_id' if i['symbol'].endswith('USDT') else 'order_id'
-                        index = self._find_index(self.data[topic], i, ord_id)
-                        self.data[topic][index] = i
-                    except StopIteration:
-                        # Keep appending or create new list if not already created.
-                        try:
-                            self.data[topic].append(i)
-                        except AttributeError:
-                            self.data[topic] = msg_json['data']
-
-            # For incoming 'trade.x', 'execution' and 'liquidation.x' data.
-            elif any(i in topic for i in {'trade', 'execution', 'liquidation'}):
-
-                # Keep appending or create new list if not already created.
-                data = [msg_json['data']] if isinstance(
-                    msg_json['data'], dict) else msg_json['data']
-
-                try:
-                    for i in data:
-                        self.data[topic].append(i)
-                except AttributeError:
-                    self.data[topic] = data
-
-                # If list is too long, pop the first entry.
-                if len(self.data[topic]) > self.max_length:
-                    self.data[topic].pop(0)
-
-            # For incoming 'insurance.x', 'klineV2.x.x', 'candle.x.x'
-            # or 'wallet' data.
-            elif any(i in topic for i in {'insurance', 'klineV2', 'wallet',
-                                          'candle'}):
-
-                # Record incoming data.
-                self.data[topic] = msg_json['data'][0] if self.trim else msg_json
-
-            # If incoming 'instrument_info.x.x' data.
-            elif 'instrument_info' in topic:
-
-                # Make updates according to delta response.
-                if 'delta' in msg_json['type']:
-                    self.data[topic].update(msg_json['data']['update'][0])
-
-                # Record the initial snapshot.
-                elif 'snapshot' in msg_json['type']:
-                    self.data[topic] = msg_json['data']
-
-            # If incoming 'position' data.
-            elif topic == 'position':
-
-                # Record incoming position data.
-                for p in msg_json['data']:
-
-                    # linear (USDT) positions have Buy|Sell side and
-                    # updates contain all USDT positions.
-                    # For linear tickers...
-                    if p['symbol'].endswith('USDT'):
-                        try:
-                            self.data[topic][p['symbol']][p['side']] = p
-                        # if side key hasn't been created yet...
-                        except KeyError:
-                            self.data[topic][p['symbol']] = {p['side']: p}
-
-                    # For non-linear tickers...
-                    else:
-                        self.data[topic][p['symbol']] = p
-
-    def _on_error(self, error):
+    async def _on_error(self, error):
         """
         Exit on errors and raise exception, or attempt reconnect.
         """
 
-        if not self.exited:
-            self.logger.error(f'WebSocket {self.wsName} encountered error: {error}.')
-            self.exit()
+        self.logger.error(
+            f'WebSocket {self.wsName} encountered a {type(error).__name__}: {error}.'
+        )
+        await self.exit()
 
         # Reconnect.
         if self.handle_error:
+            self.logger.info(f'WebSocket {self.wsName} reconnecting.')
             self._reset()
-            self._connect(self.endpoint)
 
     def _on_open(self):
         """
@@ -2200,11 +2094,12 @@ class WebSocket:
         """
         self.logger.debug(f'WebSocket {self.wsName} opened.')
 
-    def _on_close(self):
+    async def _on_close(self):
         """
         Log WS close.
         """
         self.logger.info(f'WebSocket {self.wsName} closed.')
+        await self.exit()
 
     def _reset(self):
         """
@@ -2212,4 +2107,28 @@ class WebSocket:
         """
         self.exited = False
         self.auth = False
-        self.data = {}
+        self.ws = None
+
+    async def run_forever(self):
+        self.logger.info(f'WebSocket {self.wsName} starting stream.')
+
+        while not self.exited:
+            try:
+                if not self.ws:
+                    await self._connect()
+                await self._consume()
+
+            except asyncio.CancelledError as e:
+                self.logger.warning(f'Asyncio interrupt received.')
+                self.exited = True
+                break
+
+            except Exception as e:
+                await self._on_error(e)
+
+            finally:
+                if self.exited:
+                    await self._on_close()
+                    break
+
+            await asyncio.sleep(0.1)
