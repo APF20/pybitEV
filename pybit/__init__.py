@@ -28,7 +28,7 @@ from utils import log
 #
 logger = log.setup_custom_logger('root')
 
-VERSION = '3.0.0'
+VERSION = '3.0.1'
 
 
 class Exchange:
@@ -58,21 +58,25 @@ class Exchange:
         :param kwargs: See HTTP Class.
         :returns: REST HTTP Object.
         """
-        return HTTP(session=self.session, **kwargs)
+        return HTTP(self.session, **kwargs)
 
-    def websocket(self, **kwargs):
+    def websocket(self, endpoint, **kwargs):
         """
         Create WebSocket Object.
 
         :param kwargs: See WebSocket Class.
         :returns: REST WebSocket Object.
         """
-        return WebSocket(session=self.session, **kwargs)
+        return WebSocket(self.session, endpoint, **kwargs)
 
 
 class HTTP:
     """
     Connector for Bybit's HTTP API.
+
+    :param session: Required parameter. An aiohttp ClientSession constructed
+        session instance.
+    :type session: obj
 
     :param endpoint: The base endpoint URL of the REST HTTP API, e.g.
         'https://api-testnet.bybit.com'.
@@ -127,19 +131,15 @@ class HTTP:
         using set_contract_type().
     :type contract_type: str
 
-    :param session: An aiohttp ClientSession constructed session instance.
-    :type session: obj
-
     :returns: pybit.HTTP session.
 
     """
 
-    def __init__(self, endpoint=None, api_key=None, api_secret=None,
-                 logging_level='INFO', log_requests=False,
-                 request_timeout=10, recv_window=5000, force_retry=False,
-                 retry_codes=None, ignore_codes=None, max_retries=3,
-                 retry_delay=3, referral_id=None, contract_type=None,
-                 session=None):
+    def __init__(self, session, endpoint=None, api_key=None, api_secret=None,
+                 logging_level='INFO', log_requests=False, request_timeout=10,
+                 recv_window=5000, force_retry=False, retry_codes=None,
+                 ignore_codes=None, max_retries=3, retry_delay=3,
+                 referral_id=None, contract_type=None):
 
         """Initializes the HTTP class."""
 
@@ -1810,6 +1810,8 @@ class WebSocket:
     """
     Connector for Bybit's WebSocket API.
 
+    :param session: Required parameter. An aiohttp ClientSession constructed
+        session instance.
     :param endpoint: Required parameter. The endpoint of the remote
         websocket.
     :param api_key: Your API key. Required for authenticated endpoints.
@@ -1829,14 +1831,13 @@ class WebSocket:
     :param contract_type: The contract type endpoints to use for requests. e.g.
         'linear', 'inverse', 'futures', 'spot'. Can be dynamically changed by
         using set_contract_type().
-    :param session: An aiohttp ClientSession constructed session instance.
 
     :returns: WebSocket session.
     """
 
-    def __init__(self, endpoint, api_key=None, api_secret=None,
+    def __init__(self, session, endpoint, api_key=None, api_secret=None,
                  subscriptions=None, logging_level='INFO', ping_interval=30,
-                 restart_on_error=True, contract_type=None, session=None):
+                 restart_on_error=True, contract_type=None):
 
         """
         Initializes the websocket session.
@@ -2036,7 +2037,7 @@ class WebSocket:
                                           f' Error: {msg_json["ret_msg"]}.')
 
                     elif msg_json['request']['op'] == 'auth':
-                        self.logger.info('Authorization failed. Please check your '
+                        self.logger.error('Authorization failed. Please check your '
                                          'API keys and restart.')
 
     async def _emit(self, topic: str, msg):
