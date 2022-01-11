@@ -1809,44 +1809,38 @@ class HTTP:
 class WebSocket:
     """
     Connector for Bybit's WebSocket API.
+
+    :param endpoint: Required parameter. The endpoint of the remote
+        websocket.
+    :param api_key: Your API key. Required for authenticated endpoints.
+        Defaults to None.
+    :param api_secret: Your API secret key. Required for authenticated
+        endpoints. Defaults to None.
+    :param subscriptions: A list of desired topics to subscribe to. See API
+        documentation for more information. Defaults to an empty list, which
+        will raise an error.
+    :param logging_level: The logging level of the built-in logger. Defaults
+        to logging.INFO. Options are CRITICAL (50), ERROR (40),
+        WARNING (30), INFO (20), DEBUG (10), or NOTSET (0).
+    :param ping_interval: The number of seconds between each automated ping.
+        Pong timeout is based on ping_interval/2.
+    :param restart_on_error: Whether or not the connection should restart on
+        error.
+    :param contract_type: The contract type endpoints to use for requests. e.g.
+        'linear', 'inverse', 'futures', 'spot'. Can be dynamically changed by
+        using set_contract_type().
+    :param session: An aiohttp ClientSession constructed session instance.
+
+    :returns: WebSocket session.
     """
 
     def __init__(self, endpoint, api_key=None, api_secret=None,
-                 subscriptions=None, logging_level=logging.INFO,
-                 max_data_length=200, ping_interval=30, ping_timeout=10,
-                 restart_on_error=True, purge_on_fetch=True,
-                 trim_data=True):
+                 subscriptions=None, logging_level='INFO', ping_interval=30,
+                 restart_on_error=True, contract_type=None, session=None):
+
         """
         Initializes the websocket session.
 
-        :param endpoint: Required parameter. The endpoint of the remote
-            websocket.
-        :param api_key: Your API key. Required for authenticated endpoints.
-            Defaults to None.
-        :param api_secret: Your API secret key. Required for authenticated
-            endpoints. Defaults to None.
-        :param subscriptions: A list of desired topics to subscribe to. See API
-            documentation for more information. Defaults to an empty list, which
-            will raise an error.
-        :param logging_level: The logging level of the built-in logger. Defaults
-            to logging.INFO. Options are CRITICAL (50), ERROR (40),
-            WARNING (30), INFO (20), DEBUG (10), or NOTSET (0).
-        :param max_data_length: The maximum number of rows for the stored
-            dataset. A smaller number will prevent performance or memory issues.
-        :param ping_interval: The number of seconds between each automated ping.
-        :param ping_timeout: The number of seconds to wait for 'pong' before an
-            Exception is raised.
-        :param restart_on_error: Whether or not the connection should restart on
-            error.
-        :param purge_on_fetch: Whether or not stored data should be purged each
-            fetch. For example, if the user subscribes to the 'trade' topic, and
-            fetches, should the data show all trade history up to the maximum
-            length or only get the data since the last fetch?
-        :param trim_data: Decide whether the returning data should be
-            trimmed to only provide the data value. Not compatible with Delta
-            style topics.
-
-        :returns: WebSocket session.
         """
 
         if not subscriptions:
@@ -1871,18 +1865,7 @@ class WebSocket:
         self.wsName = 'Authenticated' if api_key else 'Non-Authenticated'
 
         # Setup logger.
-        self.logger = logging.getLogger(__name__)
-
-        if len(logging.root.handlers) == 0:
-            #no handler on root logger set -> we add handler just for this logger to not mess with custom logic from outside
-            handler = logging.StreamHandler()
-            handler.setFormatter(logging.Formatter(fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                                                   datefmt='%Y-%m-%d %H:%M:%S'
-                                                   )
-                                 )
-            handler.setLevel(logging_level)
-            self.logger.addHandler(handler)
-
+        self.logger = logger
         self.logger.info(f'Initializing {self.wsName} WebSocket.')
 
         # Ensure authentication for private topics.
@@ -1896,6 +1879,12 @@ class WebSocket:
             raise PermissionError('You must be authorized to use '
                                   'private topics!')
 
+        # Set aiohttp client session.
+        self.session = session
+
+        # Set contract type
+        self.contract_type = contract_type
+
         # Set endpoint.
         self.endpoint = endpoint
 
@@ -1905,74 +1894,38 @@ class WebSocket:
 
         # Set topic subscriptions for WebSocket.
         self.subscriptions = subscriptions
-        self.max_length = max_data_length
 
         # Set ping settings.
         self.ping_interval = ping_interval
-        self.ping_timeout = ping_timeout
 
         # Other optional data handling settings.
         self.handle_error = restart_on_error
-        self.purge = purge_on_fetch
-        self.trim = trim_data
+
+        # Initialize handlers dictionary
+        self.handlers = {}
 
         # Set initial state, initialize dictionary and connnect.
         self._reset()
-        self._connect(self.endpoint)
 
-    def fetch(self, topic):
-        """
-        Fetches data from the subscribed topic.
-
-        :param topic: Required parameter. The subscribed topic to poll.
-        :returns: Filtered data as dict.
-        """
-
-        # If topic isn't a string.
-        if not isinstance(topic, str):
-            self.logger.error('Topic argument must be a string.')
-            return
-
-        # If the topic given isn't in the initial subscribed list.
-        if topic not in self.subscriptions:
-            self.logger.error(f'You aren\'t subscribed to the {topic} topic.')
-            return
-
-        # Pop all trade or execution data on each poll.
-        # dont pop order or stop_order data as we will lose valuable state
-        if topic.startswith((
-                'trade',
-                'execution'
-        )) and not topic.startswith('orderBook'):
-            data = self.data[topic].copy()
-            if self.purge:
-                self.data[topic] = []
-            return data
-        else:
-            try:
-                return self.data[topic]
-            except KeyError:
-                return []
-
-    def ping(self):
+    async def ping(self):
         """
         Pings the remote server to test the connection. The status of the
         connection can be monitored using ws.ping().
         """
 
-        self.ws.send(json.dumps({'op': 'ping'}))
+        await self.ws.send_json({'op': 'ping'})
 
-    def exit(self):
+    async def exit(self):
         """
         Closes the websocket connection.
         """
 
-        self.ws.close()
-        while self.ws.sock:
-            continue
+        if self.ws:
+            await self.ws.close()
         self.exited = True
+        self.ws = None
 
-    def _auth(self):
+    async def _auth(self):
         """
         Authorize websocket connection.
         """
@@ -1988,233 +1941,151 @@ class WebSocket:
         ).hexdigest())
 
         # Authenticate with API.
-        self.ws.send(
-            json.dumps({
-                'op': 'auth',
-                'args': [self.api_key, expires, signature]
-            })
-        )
+        await self.ws.send_json({
+            'op': 'auth',
+            'args': [self.api_key, expires, signature]
+        })
 
-    def _connect(self, url):
+    async def _connect(self):
         """
         Open websocket in a thread.
         """
 
-        self.ws = websocket.WebSocketApp(
-            url=url,
-            on_message=self._on_message,
-            on_close=self._on_close,
-            on_open=self._on_open,
-            on_error=self._on_error
-        )
-
-        # Setup the thread running WebSocketApp.
-        self.wst = threading.Thread(target=lambda: self.ws.run_forever(
-            ping_interval=self.ping_interval,
-            ping_timeout=self.ping_timeout
-        ))
-
-        # Configure as daemon; start.
-        self.wst.daemon = True
-        self.wst.start()
-
         # Attempt to connect for X seconds.
         retries = 10
-        while retries > 0 and (not self.ws.sock or not self.ws.sock.connected):
-            retries -= 1
-            time.sleep(1)
+        while retries > 0:
+
+            # Connect to WebSocket.
+            try:
+                self.ws = await self.session.ws_connect(
+                    self.endpoint,
+                    heartbeat=self.ping_interval
+                )
+                self._on_open()
+
+            # Handle errors during connection phase.
+            except(
+                aiohttp.client_exceptions.WSServerHandshakeError,
+                aiohttp.client_exceptions.ClientConnectorError
+            ) as e:
+                self.logger.error(
+                    f'WebSocket connection {type(e).__name__}: {e}'
+                )
+                retries -= 1
+
+            else:
+                break
+
+            await asyncio.sleep(1)
+
 
         # If connection was not successful, raise error.
         if retries <= 0:
-            self.exit()
-            raise websocket.WebSocketTimeoutException('Connection failed.')
+             raise WebSocketException(e)
 
         # If given an api_key, authenticate.
         if self.api_key and self.api_secret:
-            self._auth()
+            await self._auth()
+
+        # Subscribe to websocket topics.
+        await self._subscribe()
+
+    async def _subscribe(self):
+        """
+        Subscribe to websocket topics.
+        """
 
         # Check if subscriptions is a list.
         if isinstance(self.subscriptions, str):
             self.subscriptions = [self.subscriptions]
 
         # Subscribe to the requested topics.
-        self.ws.send(
-            json.dumps({
-                'op': 'subscribe',
-                'args': self.subscriptions
-            })
-        )
+        await self.ws.send_json({
+            'op': 'subscribe',
+            'args': self.subscriptions
+        })
 
-        # Initialize the topics.
-        for topic in self.subscriptions:
-            if topic not in self.data:
-                self.data[topic] = {}
-
-    @staticmethod
-    def _find_index(source, target, key):
+    async def _consume(self):
         """
-        Find the index in source list of the targeted ID.
-        """
-        return next(i for i, j in enumerate(source) if j[key] == target[key])
-
-    def _on_message(self, message):
-        """
-        Parse incoming messages. Similar structure to the
-        official WS connector.
+        Consumer to parse incoming messages and emit to binded functions.
         """
 
-        # Load dict of message.
-        msg_json = json.loads(message)
+        while 1:
+            msg_json = await self.ws.receive_json()
 
-        # If 'success' exists
-        if 'success' in msg_json:
-            if msg_json['success']:
+            if self.ws.closed:
+                raise WebsocketException(f'WebSocket {self.wsName} connection down')
 
-                # If 'request' exists.
-                if 'request' in msg_json:
+            if 'topic' in msg_json:
+                await self._emit(msg_json['topic'], msg_json)
 
-                    # If we get succesful auth, notify user.
-                    if msg_json['request']['op'] == 'auth':
-                        self.logger.info('Authorization successful.')
-                        self.auth = True
+            elif 'success' in msg_json:
+                if msg_json['success']:
+                    # If 'request' exists.
+                    if 'request' in msg_json:
+                        if msg_json['request']['op'] == 'auth':
+                            self.logger.info('Authorization successful.')
+                            self.auth = True
 
-                    # If we get successful subscription, notify user.
-                    if msg_json['request']['op'] == 'subscribe':
-                        sub = msg_json['request']['args']
-                        self.logger.info(f'Subscription to {sub} successful.')
-            else:
-                response = msg_json['ret_msg']
-                if 'unknown topic' in response:
-                    self.logger.error('Couldn\'t subscribe to topic.'
-                                      f' Error: {response}.')
+                        elif msg_json['request']['op'] == 'subscribe':
+                            sub = msg_json['request']['args']
+                            self.logger.info(f'Subscription to {sub} successful.')
+                else:
+                    if 'unknown topic' in msg_json['ret_msg']:
+                        self.logger.error('Couldn\'t subscribe to topic.'
+                                          f' Error: {msg_json["ret_msg"]}.')
 
-                # If we get unsuccesful auth, notify user.
-                elif msg_json['request']['op'] == 'auth':
-                    self.logger.info('Authorization failed. Please check your '
-                                     'API keys and restart.')
+                    elif msg_json['request']['op'] == 'auth':
+                        self.logger.info('Authorization failed. Please check your '
+                                         'API keys and restart.')
 
-        elif 'topic' in msg_json:
+    async def _emit(self, topic: str, msg):
+        """
+        Send message data events to binded callback functions.
 
-            topic = msg_json['topic']
+        :param topic: Required. Subscription topic.
+        :param msg: Required. Message event json data.
+        """
+        try:
+            await self.handlers[topic](msg)
+        except KeyError:
+            self.logger.warning(f'{topic} message event received has no binded function!')
 
-            # For incoming 'orderbookL2_25.x.x' and 'orderBook_200.x.x' data.
-            if any(i in topic for i in {'orderBookL2_25', 'orderBook_200'}):
+    def bind(self, topic, func):
+        """
+        Bind functions by topic to local object to handle websocket message events.
 
-                # Make updates according to delta response.
-                if 'delta' in msg_json['type']:
+        :param topic: Required. Subscription topic.
+        :param func: Required. Callback Function to handle processing of events.
+        """
+        # Bind function handler to topic events.
+        if topic in self.subscriptions:
+            self.handlers[topic] = func
+        else:
+            raise WebSocketException(f'{topic} is not a valid bind topic!')
 
-                    # Delete.
-                    for entry in msg_json['data']['delete']:
-                        del self.data[topic][entry['side']][entry['id']]
+    def unbind(self, topic):
+        """
+        UnBind functions from local websocket message events.
 
-                    # Updates and Inserts (in order).
-                    for entry in [
-                        *msg_json['data']['update'], *msg_json['data']['insert']
-                    ]:
-                        self.data[topic][entry['side']][entry['id']] = entry
+        :param topic: Required. Subscription topic.
+        """
+        del self.handlers[topic]
 
-                # Record the initial snapshot.
-                elif 'snapshot' in msg_json['type']:
-
-                    data = msg_json['data']['order_book'] if(
-                        'order_book' in msg_json['data']) else msg_json['data']
-
-                    for entry in data:
-                        try:
-                            self.data[topic][entry['side']][entry['id']] = entry
-                        except KeyError:
-                            self.data[topic][entry['side']] = {entry['id']: entry}
-
-                # Record message timestamp
-                self.data[topic]['timestamp_e6'] = msg_json['timestamp_e6']
-
-            # For incoming 'order' and 'stop_order' data.
-            elif topic in {'order', 'stop_order'}:
-
-                # record incoming data  
-                for i in msg_json['data']:
-                    try:
-                        # update existing entries
-                        # temporary workaround for field anomaly in stop_order data
-                        ord_id = topic + '_id' if i['symbol'].endswith('USDT') else 'order_id'
-                        index = self._find_index(self.data[topic], i, ord_id)
-                        self.data[topic][index] = i
-                    except StopIteration:
-                        # Keep appending or create new list if not already created.
-                        try:
-                            self.data[topic].append(i)
-                        except AttributeError:
-                            self.data[topic] = msg_json['data']
-
-            # For incoming 'trade.x', 'execution' and 'liquidation.x' data.
-            elif any(i in topic for i in {'trade', 'execution', 'liquidation'}):
-
-                # Keep appending or create new list if not already created.
-                data = [msg_json['data']] if isinstance(
-                    msg_json['data'], dict) else msg_json['data']
-
-                try:
-                    for i in data:
-                        self.data[topic].append(i)
-                except AttributeError:
-                    self.data[topic] = data
-
-                # If list is too long, pop the first entry.
-                if len(self.data[topic]) > self.max_length:
-                    self.data[topic].pop(0)
-
-            # For incoming 'insurance.x', 'klineV2.x.x', 'candle.x.x'
-            # or 'wallet' data.
-            elif any(i in topic for i in {'insurance', 'klineV2', 'wallet',
-                                          'candle'}):
-
-                # Record incoming data.
-                self.data[topic] = msg_json['data'][0] if self.trim else msg_json
-
-            # If incoming 'instrument_info.x.x' data.
-            elif 'instrument_info' in topic:
-
-                # Make updates according to delta response.
-                if 'delta' in msg_json['type']:
-                    self.data[topic].update(msg_json['data']['update'][0])
-
-                # Record the initial snapshot.
-                elif 'snapshot' in msg_json['type']:
-                    self.data[topic] = msg_json['data']
-
-            # If incoming 'position' data.
-            elif topic == 'position':
-
-                # Record incoming position data.
-                for p in msg_json['data']:
-
-                    # linear (USDT) positions have Buy|Sell side and
-                    # updates contain all USDT positions.
-                    # For linear tickers...
-                    if p['symbol'].endswith('USDT'):
-                        try:
-                            self.data[topic][p['symbol']][p['side']] = p
-                        # if side key hasn't been created yet...
-                        except KeyError:
-                            self.data[topic][p['symbol']] = {p['side']: p}
-
-                    # For non-linear tickers...
-                    else:
-                        self.data[topic][p['symbol']] = p
-
-    def _on_error(self, error):
+    async def _on_error(self, error):
         """
         Exit on errors and raise exception, or attempt reconnect.
         """
 
-        if not self.exited:
-            self.logger.error(f'WebSocket {self.wsName} encountered error: {error}.')
-            self.exit()
+        self.logger.error(
+            f'WebSocket {self.wsName} encountered a {type(error).__name__}: {error}.'
+        )
+        await self.exit()
 
         # Reconnect.
         if self.handle_error:
+            self.logger.info(f'WebSocket {self.wsName} reconnecting.')
             self._reset()
-            self._connect(self.endpoint)
 
     def _on_open(self):
         """
@@ -2222,11 +2093,12 @@ class WebSocket:
         """
         self.logger.debug(f'WebSocket {self.wsName} opened.')
 
-    def _on_close(self):
+    async def _on_close(self):
         """
         Log WS close.
         """
         self.logger.info(f'WebSocket {self.wsName} closed.')
+        await self.exit()
 
     def _reset(self):
         """
@@ -2234,4 +2106,28 @@ class WebSocket:
         """
         self.exited = False
         self.auth = False
-        self.data = {}
+        self.ws = None
+
+    async def run_forever(self):
+        self.logger.info(f'WebSocket {self.wsName} starting stream.')
+
+        while not self.exited:
+            try:
+                if not self.ws:
+                    await self._connect()
+                await self._consume()
+
+            except asyncio.CancelledError as e:
+                self.logger.warning(f'Asyncio interrupt received.')
+                self.exited = True
+                break
+
+            except Exception as e:
+                await self._on_error(e)
+
+            finally:
+                if self.exited:
+                    await self._on_close()
+                    break
+
+            await asyncio.sleep(0.1)
