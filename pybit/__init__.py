@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 
 """
-pybit-ev
+pybitEV
 ------------------------
 
-pybit is a lightweight and high-performance API connector for the
-RESTful and WebSocket APIs of the Bybit exchange.
+pybitEV is a lightweight, high-performance and asyncronous API
+connector for the RESTful and WebSocket APIs of the Bybit exchange.
 
 Documentation can be found at
 https://github.com/APF20/pybit
@@ -17,16 +17,57 @@ https://github.com/APF20/pybit
 
 import time
 import hmac
-import json
-import logging
-import threading
 import asyncio
 import aiohttp
-import websocket
 
-from .exceptions import FailedRequestError, InvalidRequestError
+from .exceptions import FailedRequestError, InvalidRequestError, WebSocketException
+from utils import log
 
-VERSION = '2.0.0'
+#
+# Helpers
+#
+logger = log.setup_custom_logger('root')
+
+VERSION = '3.0.0'
+
+
+class Exchange:
+    """
+    Exchange Interface for pybitEV REST and WebSocket API
+    """
+
+    def __init__(self):
+        self.session = aiohttp.ClientSession()
+        self.logger = logger
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *err):
+        await self.exit()
+
+    async def exit(self):
+        """Closes the aiohttp session."""
+        await self.session.close()
+        self.logger.info('Exchange session closed.')
+
+    def rest(self, **kwargs):
+        """
+        Create REST HTTP Object.
+
+        :param kwargs: See HTTP Class.
+        :returns: REST HTTP Object.
+        """
+        return HTTP(session=self.session, **kwargs)
+
+    def websocket(self, **kwargs):
+        """
+        Create WebSocket Object.
+
+        :param kwargs: See WebSocket Class.
+        :returns: REST WebSocket Object.
+        """
+        return WebSocket(session=self.session, **kwargs)
 
 
 class HTTP:
@@ -86,15 +127,19 @@ class HTTP:
         using set_contract_type().
     :type contract_type: str
 
+    :param session: An aiohttp ClientSession constructed session instance.
+    :type session: obj
+
     :returns: pybit.HTTP session.
 
     """
 
     def __init__(self, endpoint=None, api_key=None, api_secret=None,
-                 logging_level=logging.INFO, log_requests=False,
+                 logging_level='INFO', log_requests=False,
                  request_timeout=10, recv_window=5000, force_retry=False,
                  retry_codes=None, ignore_codes=None, max_retries=3,
-                 retry_delay=3, referral_id=None, contract_type=None):
+                 retry_delay=3, referral_id=None, contract_type=None,
+                 session=None):
 
         """Initializes the HTTP class."""
 
@@ -102,18 +147,7 @@ class HTTP:
         self.url = 'https://api.bybit.com' if not endpoint else endpoint
 
         # Setup logger.
-        self.logger = logging.getLogger(__name__)
-
-        if len(logging.root.handlers) == 0:
-            #no handler on root logger set -> we add handler just for this logger to not mess with custom logic from outside
-            handler = logging.StreamHandler()
-            handler.setFormatter(logging.Formatter(fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                                                   datefmt='%Y-%m-%d %H:%M:%S'
-                                                   )
-                                 )
-            handler.setLevel(logging_level)
-            self.logger.addHandler(handler)
-
+        self.logger = logger
         self.logger.info('Initializing HTTP session.')
         self.log_requests = log_requests
 
@@ -142,8 +176,11 @@ class HTTP:
         # Set whitelist of non-fatal Bybit status codes to ignore.
         self.ignore_codes = {} if not ignore_codes else ignore_codes
 
+        # Set aiohttp client session.
+        self.session = session
+
         # Set default aiohttp headers.
-        headers = {
+        self.headers = {
             'User-Agent': 'pybit-' + VERSION,
             'Content-Type': 'application/x-www-form-urlencoded',
             'Accept': 'application/json'
@@ -151,10 +188,7 @@ class HTTP:
 
         # Add referral ID to header.
         if referral_id:
-            headers['Referer'] = self.referral_id
-
-        # Initialize aiohttp client session.
-        self.client = aiohttp.ClientSession(headers=headers)
+            self.headers['Referer'] = self.referral_id
 
         # Set contract type
         self.set_contract_type(contract_type)
@@ -167,7 +201,7 @@ class HTTP:
 
     async def exit(self):
         """Closes the aiohttp session."""
-        await self.client.close()
+        await self.session.close()
         self.logger.info('HTTP session closed.')
 
     async def _sem_gather(self, n: int, *aws):
@@ -1664,25 +1698,24 @@ class HTTP:
                 self.logger.info(f'Request -> {method} {path}: {req_params}')
 
             # Prepare request; use 'params' for GET and 'json' for POST.
+            r = {'headers': self.headers}
+
             if method == 'GET':
-                r = {'params': req_params}
+                r['params'] = req_params
             else:
                 if self.contract_type == 'spot':
                     full_param_str = '&'.join(
                         [str(k) + '=' + str(v) for k, v in
                          sorted(query.items()) if v is not None]
                     )
-                    r = {}
                     path += f"?{full_param_str}"
                 else:
-                    r = {
-                        'headers': {'Content-Type': 'application/json'},
-                        'json': req_params
-                    }
+                    r['headers']['Content-Type'] = 'application/json'
+                    r['json'] = req_params
 
             # Attempt the request.
             try:
-                async with self.client.request(
+                async with self.session.request(
                     method, path, **r, timeout=self.timeout
                 ) as s:
 
