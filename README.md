@@ -1,4 +1,4 @@
-# pybit-ev
+# pybitEV
 <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
 [![All Contributors](https://img.shields.io/badge/all_contributors-3-orange.svg?style=flat-square)](#contributors-)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
@@ -42,18 +42,24 @@ Python3 API connector for Bybit's HTTP and Websockets APIs.
 - [Donations](#donations)
 
 ## About
-Put simply, `pybit` (Python + Bybit) is a lightweight one-stop-shop module for the Bybit HTTP and WebSocket APIs. I was personally never a fan of auto-generated connectors that used a mosh-pit of various modules you didn't want (sorry, `bravado`) and wanted to build my own Python3-dedicated connector with very little external resources. The goal of the connector is to provide traders and developers with an easy-to-use high-performing module that has an active issue and discussion board leading to consistent improvements.
+`PybitEV` is a hard fork of the original Pybit project, upgraded with asyncronous support using the built in asyncio library and the aiohttp library.
+
+Put simply, `pybitEV` (Python + Bybit) is a lightweight one-stop-shop module for the Bybit REST HTTP and WebSocket APIs. I was personally never a fan of auto-generated connectors that used a mosh-pit of various modules you didn't want (sorry, `bravado`) and wanted to build my own Python3-dedicated connector with very little external resources. The goal of the connector is to provide traders and developers with an easy-to-use high-performing module that has an active issue and discussion board leading to consistent improvements.
 
 ## Development
-As a user of the module myself, `pybit` is being actively developed, especially since Bybit is making changes and improvements to their API on a daily basis (we're still missing some key functions such as bulk order submission or withdrawals). `pybit` uses `requests` and `websocket-client` for its methods, alongside other built-in modules. Anyone is welcome to branch/fork the repository and add their own upgrades. If you think you've made substantial improvements to the module, submit a pull request and I'll gladly take a look.
+After considerable contributions to the original pybit `community` project, I decided to create the `pybitEV` hard fork of the original repository (credit to verata-veritatis for the early iterations) and maintain this fork as a public, true `community` project.
+
+As a user of the module myself, `pybitEV` is being actively developed, especially since Bybit is making changes and improvements to their API on a daily basis (we're still missing some key functions such as bulk order submission or withdrawals). `pybitEV` uses aiohttp for its methods, alongside other built-in modules, such as asyncio, for high performance asyncronous operations.
+
+Feel free to fork this repository, issue reports for any bugs and add pull requests for any improvements.
 
 ## Installation
-`pybit` requires Python 3.6.1 or higher. The module can be installed manually or via [PyPI](https://pypi.org/project/pybit/) with `pip`:
-```
-pip install pybit
-```
+`pybitEV` requires Python 3.7 or higher. The module can be installed manually. Pip installation support will be considered.
 
 ## Basic Usage
+
+** Check examples files - below section will be updated shortly for asyncio/aiohttp usage **
+
 You can retrieve the HTTP and WebSocket classes like so:
 ```python
 from pybit import HTTP, WebSocket
@@ -282,7 +288,7 @@ To see how to use these JSONs with pybit, please check the example files.
 | ticketInfo          |
 
 ## Contact
-You can reach out to me (Verata) via Telegram: @verataveritatis. I'm pretty active on the [BybitAPI Telegram](https://t.me/BybitAPI) group chat.
+I'm pretty active on the [BybitAPI Telegram](https://t.me/BybitAPI) group chat.
 
 ## Contributors
 
@@ -293,8 +299,8 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
 <!-- markdownlint-disable -->
 <table>
   <tr>
-    <td align="center"><a href="https://github.com/verata-veritatis"><img src="https://avatars0.githubusercontent.com/u/9677388?v=4" width="100px;" alt=""/><br /><sub><b>verata-veritatis</b></sub></a><br /><a href="https://github.com/verata-veritatis/pybit/commits?author=verata-veritatis" title="Code">💻</a> <a href="https://github.com/verata-veritatis/pybit/commits?author=verata-veritatis" title="Documentation">📖</a></td>
-     <td align="center"><a href="https://github.com/APF20"><img src="https://avatars0.githubusercontent.com/u/74583612?v=4" width="100px;" alt=""/><br /><sub><b>APF20</b></sub></a><br /><a href="https://github.com/verata-veritatis/pybit/commits?author=APF20" title="Code">💻</a></td>
+      <td align="center"><a href="https://github.com/APF20"><img src="https://avatars0.githubusercontent.com/u/74583612?v=4" width="100px;" alt=""/><br /><sub><b>APF20</b></sub></a><br /><a href="https://github.com/verata-veritatis/pybit/commits?author=APF20" title="Code">💻</a></td>
+      <td align="center"><a href="https://github.com/verata-veritatis"><img src="https://avatars0.githubusercontent.com/u/9677388?v=4" width="100px;" alt=""/><br /><sub><b>verata-veritatis</b></sub></a><br /><a href="https://github.com/verata-veritatis/pybit/commits?author=verata-veritatis" title="Code">💻</a> <a href="https://github.com/verata-veritatis/pybit/commits?author=verata-veritatis" title="Documentation">📖</a></td>
       <td align="center"><a href="https://github.com/cameronhh"><img src="https://avatars0.githubusercontent.com/u/30434979?v=4" width="100px;" alt=""/><br /><sub><b>Cameron Harder-Hutton</b></sub></a><br /><a href="https://github.com/verata-veritatis/pybit/commits?author=cameronhh" title="Code">💻</a></td>
      <td align="center"><a href="https://github.com/tconley"><img src="https://avatars1.githubusercontent.com/u/1893207?v=4" width="100px;" alt=""/><br /><sub><b>Todd Conley</b></sub></a><br /><a href="https://github.com/tconley/pybit/commits?author=tconley" title="Ideas">🤔</a></td>
   </tr>
