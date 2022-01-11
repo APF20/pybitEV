@@ -100,15 +100,15 @@ close_position()
 """
 
 # Import pybit and asyncio, define a coroutine and HTTP object.
-from pybit import HTTP
 import asyncio
+from pybit import Exchange
 
 """
-You can create an authenticated or unauthenticated HTTP session. 
+You can create an authenticated or unauthenticated REST HTTP session. 
 You can skip authentication by not passing any value for api_key
 and api_secret.
 
-HTTP class supports both context manager protocol (self closing)
+Exchange class supports both context manager protocol (self closing)
 and direct instantiation (manual close required).
 """
 
@@ -120,13 +120,14 @@ and direct instantiation (manual close required).
 # api_key and api_secret can optionally be omitted.
 
 async def main():
-    async with HTTP(
-        endpoint='https://api.bybit.com',
-        api_key='...',
-        api_secret='...',
-        contract_type='linear'
-    ) as session:
-        await session.latest_information_for_symbol(symbol='EOSUSD')
+    async with Exchange() as session:
+        rest = session.rest(
+            endpoint='https://api.bybit.com',
+            api_key='...',
+            api_secret='...',
+            contract_type='linear'
+        )
+        print(await rest.latest_information_for_symbol(symbol='EOSUSD'))
 
 asyncio.run(main())
 
@@ -138,13 +139,14 @@ asyncio.run(main())
 
 async def main():
     try:
-        session = HTTP(
+        session = Exchange()
+        rest = session.rest(
             endpoint='https://api.bybit.com',
             api_key='...',
             api_secret='...',
             contract_type='linear'
         )
-        await session.get_wallet_balance(coin='BTC')
+        print(await rest.get_wallet_balance(coin='BTC'))
     finally:
         await session.exit()
         
