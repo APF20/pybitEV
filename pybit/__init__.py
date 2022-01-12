@@ -28,7 +28,7 @@ from . import log
 #
 logger = log.setup_custom_logger('root')
 
-VERSION = '3.0.2'
+VERSION = '3.1.2'
 
 
 class Exchange:
@@ -250,6 +250,7 @@ class HTTP:
                 'set_auto_add_margin':          '/private/linear/position/set-auto-add-margin',
                 'set_leverage':                 '/private/linear/position/set-leverage',
                 'cross_isolated_margin_switch': '/private/linear/position/switch-isolated',
+                'position_mode_switch':         '/private/linear/position/switch-mode',
                 'full_partial_position_tp_sl_switch':   '/private/linear/tpsl/switch-mode',
                 'set_trading_stop':             '/private/linear/position/trading-stop',
                 'add_reduce_margin':            '/private/linear/position/add-margin',
@@ -1506,7 +1507,8 @@ class HTTP:
                 'qty': p['size'],
                 'time_in_force': 'ImmediateOrCancel',
                 'reduce_only': True,
-                'close_on_trigger': True
+                'close_on_trigger': True,
+                'position_idx': p['position_idx']
             } for p in (r if isinstance(r, list) else [r]) if p['size'] > 0
         ]
 
