@@ -21,14 +21,14 @@ import asyncio
 import aiohttp
 
 from .exceptions import FailedRequestError, InvalidRequestError, WebSocketException
-from utils import log
+from . import log
 
 #
 # Helpers
 #
 logger = log.setup_custom_logger('root')
 
-VERSION = '3.0.1'
+VERSION = '3.0.2'
 
 
 class Exchange:
