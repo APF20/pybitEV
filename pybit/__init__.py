@@ -28,7 +28,7 @@ from . import log
 #
 logger = log.setup_custom_logger('root')
 
-VERSION = '3.0.2'
+VERSION = '3.2.2'
 
 
 class Exchange:
@@ -250,6 +250,7 @@ class HTTP:
                 'set_auto_add_margin':          '/private/linear/position/set-auto-add-margin',
                 'set_leverage':                 '/private/linear/position/set-leverage',
                 'cross_isolated_margin_switch': '/private/linear/position/switch-isolated',
+                'position_mode_switch':         '/private/linear/position/switch-mode',
                 'full_partial_position_tp_sl_switch':   '/private/linear/tpsl/switch-mode',
                 'set_trading_stop':             '/private/linear/position/trading-stop',
                 'add_reduce_margin':            '/private/linear/position/add-margin',
@@ -1506,7 +1507,8 @@ class HTTP:
                 'qty': p['size'],
                 'time_in_force': 'ImmediateOrCancel',
                 'reduce_only': True,
-                'close_on_trigger': True
+                'close_on_trigger': True,
+                'position_idx': p['position_idx']
             } for p in (r if isinstance(r, list) else [r]) if p['size'] > 0
         ]
 
@@ -1820,7 +1822,7 @@ class WebSocket:
         endpoints. Defaults to None.
     :param subscriptions: A list of desired topics to subscribe to. See API
         documentation for more information. Defaults to an empty list, which
-        will raise an error.
+        will raise an error if not spot private connection.
     :param logging_level: The logging level of the built-in logger. Defaults
         to logging.INFO. Options are CRITICAL (50), ERROR (40),
         WARNING (30), INFO (20), DEBUG (10), or NOTSET (0).
@@ -1828,39 +1830,64 @@ class WebSocket:
         Pong timeout is based on ping_interval/2.
     :param restart_on_error: Whether or not the connection should restart on
         error.
-    :param contract_type: The contract type endpoints to use for requests. e.g.
-        'linear', 'inverse', 'futures', 'spot'. Can be dynamically changed by
-        using set_contract_type().
 
     :returns: WebSocket session.
     """
 
     def __init__(self, session, endpoint, api_key=None, api_secret=None,
                  subscriptions=None, logging_level='INFO', ping_interval=30,
-                 restart_on_error=True, contract_type=None):
+                 restart_on_error=True):
 
         """
         Initializes the websocket session.
 
         """
 
+        # Set contract type
+        self.contract_type = self._set_contract_type(endpoint)
+
+        # Validate subscriptions
         if not subscriptions:
-            raise Exception('Subscription list cannot be empty!')
+            if self.contract_type == 'spot_private':
+                subscriptions = [
+                    'outboundAccountInfo',
+                    'executionReport',
+                    'ticketInfo'
+                ]
+            else:
+                raise Exception('Subscription list cannot be empty!')
 
-        # Require symbol on 'trade' topic.
-        if 'trade' in subscriptions:
-            raise Exception('\'trade\' requires a ticker, e.g. '
-                            '\'trade.BTCUSD\'.')
+        elif self.contract_type == 'spot_public' and api_key:
+                raise Exception('Public topics do not require authentication!')
 
-        # Require currency on 'insurance' topic.
-        if 'insurance' in subscriptions:
-            raise Exception('\'insurance\' requires a currency, e.g. '
-                            '\'insurance.BTC\'.')
+        # Validate some required parameters until Bybit docs are updated.
+        if self.contract_type == 'derivatives':
 
-        # Require timeframe and ticker on 'klineV2' topic.
-        if 'klineV2' in subscriptions:
-            raise Exception('\'klineV2\' requires a timeframe and ticker, e.g.'
-                            ' \'klineV2.5.BTCUSD\'.')
+            # Require symbol on 'trade' topic.
+            if 'trade' in subscriptions:
+                raise Exception('\'trade\' requires a ticker, e.g. '
+                                '\'trade.BTCUSD\'.')
+
+            # Require currency on 'insurance' topic.
+            if 'insurance' in subscriptions:
+                raise Exception('\'insurance\' requires a currency, e.g. '
+                                '\'insurance.BTC\'.')
+
+            # Require symbol on 'liquidation' topic.
+            if 'liquidation' in subscriptions:
+                raise Exception('\'liquidation\' requires a ticker, e.g. '
+                                '\'liquidation.BTCUSD\'.')
+
+            # Ensure authentication for private topics.
+            if any(i in subscriptions for i in [
+                'position',
+                'execution',
+                'order',
+                'stop_order',
+                'wallet'
+            ]) and api_key is None:
+                raise PermissionError('You must be authorized to use '
+                                      'private topics!')
 
         # set websocket name for logging purposes
         self.wsName = 'Authenticated' if api_key else 'Non-Authenticated'
@@ -1869,22 +1896,8 @@ class WebSocket:
         self.logger = logger
         self.logger.info(f'Initializing {self.wsName} WebSocket.')
 
-        # Ensure authentication for private topics.
-        if any(i in subscriptions for i in [
-            'position',
-            'execution',
-            'order',
-            'stop_order',
-            'wallet'
-        ]) and api_key is None:
-            raise PermissionError('You must be authorized to use '
-                                  'private topics!')
-
         # Set aiohttp client session.
         self.session = session
-
-        # Set contract type
-        self.contract_type = contract_type
 
         # Set endpoint.
         self.endpoint = endpoint
@@ -1905,8 +1918,18 @@ class WebSocket:
         # Initialize handlers dictionary
         self.handlers = {}
 
-        # Set initial state, initialize dictionary and connnect.
+        # Set initial state, initialize dictionary and connect.
         self._reset()
+
+    @staticmethod
+    def _set_contract_type(endpoint: str):
+        if 'spot' in endpoint:
+            if any(i in endpoint for i in {'v1', 'v2'}):
+                return 'spot_public'
+            else:
+                return 'spot_private'
+        else:
+            return 'derivatives'
 
     async def ping(self):
         """
@@ -1979,7 +2002,6 @@ class WebSocket:
 
             await asyncio.sleep(1)
 
-
         # If connection was not successful, raise error.
         if retries <= 0:
              raise WebSocketException(e)
@@ -1997,48 +2019,145 @@ class WebSocket:
         """
 
         # Check if subscriptions is a list.
-        if isinstance(self.subscriptions, str):
+        if isinstance(self.subscriptions, (str, dict)):
             self.subscriptions = [self.subscriptions]
 
         # Subscribe to the requested topics.
-        await self.ws.send_json({
-            'op': 'subscribe',
-            'args': self.subscriptions
-        })
+        if self.contract_type == 'spot_public':
+            for s in self.subscriptions:
+                self.logger.info(f"Subscribing to {self.spot_topic(s)} {s}.")
+                await self.ws.send_json(s)
 
-    async def _consume(self):
-        """
-        Consumer to parse incoming messages and emit to binded functions.
-        """
+        elif self.contract_type == 'derivatives':
+            await self.ws.send_json({
+                'op': 'subscribe',
+                'args': self.subscriptions
+            })
+
+    async def _dispatch(self):
+
+        if self.contract_type == 'spot_public':
+            consume = self._consume_spot_public
+        elif self.contract_type == 'spot_private':
+            consume = self._consume_spot_private
+        else:
+            consume = self._consume_derivatives
 
         while 1:
             msg_json = await self.ws.receive_json()
 
             if self.ws.closed:
-                raise WebsocketException(f'WebSocket {self.wsName} connection down')
+                raise WebSocketException(f'WebSocket {self.wsName} connection down')
 
-            if 'topic' in msg_json:
-                await self._emit(msg_json['topic'], msg_json)
+            await consume(msg_json)
 
-            elif 'success' in msg_json:
-                if msg_json['success']:
-                    # If 'request' exists.
-                    if 'request' in msg_json:
-                        if msg_json['request']['op'] == 'auth':
-                            self.logger.info('Authorization successful.')
-                            self.auth = True
+    async def _consume_derivatives(self, msg: dict):
+        """
+        Consumer to parse and emit incoming derivatives messages.
+        """
 
-                        elif msg_json['request']['op'] == 'subscribe':
-                            sub = msg_json['request']['args']
-                            self.logger.info(f'Subscription to {sub} successful.')
-                else:
-                    if 'unknown topic' in msg_json['ret_msg']:
-                        self.logger.error('Couldn\'t subscribe to topic.'
-                                          f' Error: {msg_json["ret_msg"]}.')
+        if 'topic' in msg:
+            await self._emit(msg['topic'], msg)
 
-                    elif msg_json['request']['op'] == 'auth':
-                        self.logger.error('Authorization failed. Please check your '
-                                         'API keys and restart.')
+        elif 'success' in msg:
+            if msg['success']:
+                # If 'request' exists.
+                if 'request' in msg:
+                    if msg['request']['op'] == 'auth':
+                        self.logger.info('Authorization successful.')
+
+                    elif msg['request']['op'] == 'subscribe':
+                        sub = msg['request']['args']
+                        self.logger.info(f'Subscription to {sub} successful.')
+            else:
+                if 'unknown topic' in msg['ret_msg']:
+                    raise WebSocketException(f'Couldn\'t subscribe to topic.'
+                                             f'Error: {msg["ret_msg"]}.')
+
+                elif msg['request']['op'] == 'auth':
+                    raise WebSocketException('Authorization failed. Please '
+                                             'check your API keys and restart.')
+
+    async def _consume_spot_public(self, msg: dict):
+        """
+        Consumer to parse and emit incoming spot public messages.
+        """
+
+        # Spotv2 subscribe msg also has topic key, so we check it before topic.
+        if 'msg' in msg and msg['msg'] == 'Success':
+                sub = self.spot_topic(msg)
+                self.logger.info(f'Subscription to {sub} successful.')
+
+        elif 'topic' in msg:
+            topic = self.spot_topic(msg)
+            await self._emit(topic, msg)
+
+        # Subscribe error msg
+        elif 'code' in msg:
+            if msg['code'] != '0':
+                raise WebSocketException('Couldn\'t subscribe to topic. '
+                                         f'Error {msg["code"]}: {msg["desc"]}.')
+
+    async def _consume_spot_private(self, msg: dict):
+        """
+        Consumer to parse and emit incoming spot private messages.
+        """
+
+        # topic
+        if 'e' in msg:
+            await self._emit(msg['e'], msg)
+
+        elif 'auth' in msg:
+            if msg['auth'] == 'success':
+                self.logger.info('Authorization successful.')
+
+                for s in self.subscriptions:
+                    self.logger.info(f'Subscription to {s} successful.')
+
+            else:
+                raise WebSocketException('Authorization failed. Please check '
+                                         'your API keys and restart.')
+
+        elif 'ping' in msg:
+            pass
+
+    @staticmethod
+    def spot_topic(msg: dict):
+        """
+        Generate spot public topics to match common derivates format:
+        [topic][spot version][.][klineType|dumpScale value][.][symbol]
+        eg. klineV1.1m.BTCUSDT, tradeV2.BTCUSDT, mergedDepthV1.1.BTCUSDT
+
+        :param msg: Dict with parsed json, in subscription or received
+            message format.
+
+        :returns: Formatted topic as str.
+        """
+
+        try:
+            # Spot version.
+            topic = msg['topic'] + ('V1' if 'symbol' in msg else 'V2')
+
+            # Params values. realtimeV1 topic does not have params.
+            if 'params' in msg:
+                # kline; v1/v2
+                if 'klineType' in msg['params']:
+                    topic += f".{msg['params']['klineType']}"
+
+                # mergedDepth; v1 only
+                elif 'dumpScale' in msg['params']:
+                    topic += f".{msg['params']['dumpScale']}"
+
+            # Symbol; v1|v2
+            if 'symbol' in msg:
+                topic += f".{msg['symbol']}"
+            else:
+                topic += f".{msg['params']['symbol']}"
+
+            return topic
+
+        except KeyError as e:
+            raise KeyError(f'{e} missing in {msg}')
 
     async def _emit(self, topic: str, msg):
         """
@@ -2059,11 +2178,11 @@ class WebSocket:
         :param topic: Required. Subscription topic.
         :param func: Required. Callback Function to handle processing of events.
         """
+        if not asyncio.iscoroutinefunction(func):
+            raise ValueError('Binded handler must be coroutine function!')
+
         # Bind function handler to topic events.
-        if topic in self.subscriptions:
-            self.handlers[topic] = func
-        else:
-            raise WebSocketException(f'{topic} is not a valid bind topic!')
+        self.handlers[topic] = func
 
     def unbind(self, topic):
         """
@@ -2092,7 +2211,7 @@ class WebSocket:
         """
         Log WS open.
         """
-        self.logger.debug(f'WebSocket {self.wsName} opened.')
+        self.logger.info(f'WebSocket {self.wsName} opened.')
 
     async def _on_close(self):
         """
@@ -2106,17 +2225,16 @@ class WebSocket:
         Set state booleans and initialize dictionary.
         """
         self.exited = False
-        self.auth = False
         self.ws = None
 
     async def run_forever(self):
-        self.logger.info(f'WebSocket {self.wsName} starting stream.')
+        self.logger.debug(f'WebSocket {self.wsName} starting stream.')
 
         while not self.exited:
             try:
                 if not self.ws:
                     await self._connect()
-                await self._consume()
+                await self._dispatch()
 
             except asyncio.CancelledError as e:
                 self.logger.warning(f'Asyncio interrupt received.')
