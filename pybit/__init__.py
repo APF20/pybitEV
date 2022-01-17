@@ -1524,8 +1524,11 @@ class HTTP:
 
     async def create_internal_transfer(self, **kwargs):
         """
-        Create internal transfer. For more information, see
-        https://bybit-exchange.github.io/docs/account_asset/#t-transfer
+        Create internal transfer.
+
+        :param kwargs: See
+            https://bybit-exchange.github.io/docs/account_asset/#t-createinternaltransfer.
+        :returns: Request results as dictionary.
         """
 
         return await self._submit_request(
@@ -1537,8 +1540,11 @@ class HTTP:
 
     async def create_subaccount_transfer(self, **kwargs):
         """
-        Create internal transfer. For more information, see
-        https://bybit-exchange.github.io/docs/account_asset/#t-transfer
+        Create internal transfer.
+
+        :param kwargs: See
+            https://bybit-exchange.github.io/docs/account_asset/#t-createsubaccounttransfer.
+        :returns: Request results as dictionary.
         """
 
         return await self._submit_request(
@@ -1550,8 +1556,11 @@ class HTTP:
 
     async def query_transfer_list(self, **kwargs):
         """
-        Create internal transfer. For more information, see
-        https://bybit-exchange.github.io/docs/account_asset/#t-transfer
+        Create internal transfer.
+
+        :param kwargs: See
+            https://bybit-exchange.github.io/docs/account_asset/#t-querytransferlist.
+        :returns: Request results as dictionary.
         """
 
         return await self._submit_request(
@@ -1563,8 +1572,11 @@ class HTTP:
 
     async def query_subaccount_list(self):
         """
-        Create internal transfer. For more information, see
-        https://bybit-exchange.github.io/docs/account_asset/#t-transfer
+        Create internal transfer.
+
+        :param kwargs: See
+            https://bybit-exchange.github.io/docs/account_asset/#t-querysubaccountlist.
+        :returns: Request results as dictionary.
         """
 
         return await self._submit_request(
@@ -1576,8 +1588,11 @@ class HTTP:
 
     async def query_subaccount_transfer_list(self,**kwargs):
         """
-        Create internal transfer. For more information, see
-        https://bybit-exchange.github.io/docs/account_asset/#t-transfer
+        Create internal transfer.
+
+        :param kwargs: See
+            https://bybit-exchange.github.io/docs/account_asset/#t-querysubaccounttransferlist.
+        :returns: Request results as dictionary.
         """
 
         return await self._submit_request(
