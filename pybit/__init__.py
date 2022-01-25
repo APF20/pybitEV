@@ -28,7 +28,7 @@ from . import log
 #
 logger = log.setup_custom_logger('root')
 
-VERSION = '3.2.2'
+VERSION = '3.3.2'
 
 
 class Exchange:
@@ -2040,7 +2040,7 @@ class WebSocket:
         # Subscribe to the requested topics.
         if self.contract_type == 'spot_public':
             for s in self.subscriptions:
-                self.logger.info(f"Subscribing to {self.spot_topic(s)} {s}.")
+                self.logger.debug(f"Subscribing to {self.spot_topic(s)} {s}.")
                 await self.ws.send_json(s)
 
         elif self.contract_type == 'derivatives':
@@ -2048,6 +2048,11 @@ class WebSocket:
                 'op': 'subscribe',
                 'args': self.subscriptions
             })
+
+    async def _heartbeat(self):
+        while 1:
+            await asyncio.sleep(self.ping_interval)
+            self.ws._send_heartbeat()
 
     async def _dispatch(self):
 
@@ -2058,13 +2063,11 @@ class WebSocket:
         else:
             consume = self._consume_derivatives
 
-        while 1:
+        while not self.ws.closed:
             msg_json = await self.ws.receive_json()
-
-            if self.ws.closed:
-                raise WebSocketException(f'WebSocket {self.wsName} connection down')
-
             await consume(msg_json)
+
+        raise WebSocketException(f'WebSocket {self.wsName} connection down')
 
     async def _consume_derivatives(self, msg: dict):
         """
@@ -2085,7 +2088,7 @@ class WebSocket:
                         sub = msg['request']['args']
                         self.logger.info(f'Subscription to {sub} successful.')
             else:
-                if 'unknown topic' in msg['ret_msg']:
+                if msg['request']['op'] == 'subscribe':
                     raise WebSocketException(f'Couldn\'t subscribe to topic.'
                                              f'Error: {msg["ret_msg"]}.')
 
@@ -2113,14 +2116,15 @@ class WebSocket:
                 raise WebSocketException('Couldn\'t subscribe to topic. '
                                          f'Error {msg["code"]}: {msg["desc"]}.')
 
-    async def _consume_spot_private(self, msg: dict):
+    async def _consume_spot_private(self, msg):
         """
         Consumer to parse and emit incoming spot private messages.
         """
 
         # topic
-        if 'e' in msg:
-            await self._emit(msg['e'], msg)
+        if isinstance(msg, list):
+            for m in msg:
+                await self._emit(m['e'], m)
 
         elif 'auth' in msg:
             if msg['auth'] == 'success':
@@ -2249,14 +2253,19 @@ class WebSocket:
             try:
                 if not self.ws:
                     await self._connect()
-                await self._dispatch()
+
+                # Force ping to avoid anomolous Bybit closing on spot public
+                if self.contract_type == 'spot_public':
+                    await asyncio.gather(self._dispatch(), self._heartbeat())
+                else:
+                    await self._dispatch()
 
             except asyncio.CancelledError as e:
                 self.logger.warning(f'Asyncio interrupt received.')
                 self.exited = True
                 break
 
-            except Exception as e:
+            except WebSocketException as e:
                 await self._on_error(e)
 
             finally:
