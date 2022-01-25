@@ -8,7 +8,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='pybitEV',
-    version='3.0.1',
+    version='3.3.2',
     description='Python3 Bybit Asyncio HTTP/WebSocket API Connector', 
     long_description=long_description,
     long_description_content_type='text/markdown',
