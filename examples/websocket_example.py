@@ -12,20 +12,45 @@ wss://stream-testnet.bybit.com/realtime_private
 wss://stream.bybit.com/realtime_public
 wss://stream.bybit.com/realtime_private
 
-Public Topics:
+Spot endpoints:
+wss://stream-testnet.bybit.com/spot/quote/ws/v1
+wss://stream-testnet.bybit.com/spot/quote/ws/v2
+wss://stream-testnet.bybit.com/spot/ws
+wss://stream.bybit.com/spot/quote/ws/v1
+wss://stream.bybit.com/spot/quote/ws/v2
+wss://stream.bybit.com/spot/ws
+
+Futures Public Topics:
 orderBookL2_25
 orderBookL2-200
 trade
 insurance
 instrument_info
 klineV2
+liquidation
 
-Private Topics:
+Futures Private Topics:
 position
 execution
 order
 stop_order
 wallet
+
+Spot Public Topics:
+Subscribing to spot public topics uses the JSON format to pass the topic name
+and filters, as opposed to futures WS where the topic and filters are pass in
+a single string. So, a python dict is required in your subscriptions.
+Examples can be found in the code panel here:
+https://bybit-exchange.github.io/docs/spot/#t-publictopics
+
+Binding functions to the spot public topic streams uses canonical topic names!
+See WebSocket().spot_topic() method and examples below for spot topic details.
+
+Spot Private Topics:
+Subscribing to spot private topics is done automatically upon authentication.
+outboundAccountInfo
+executionReport
+ticketInfo
 """
 
 # Import pybit and asyncio, define a coroutine and WebSocket object.
