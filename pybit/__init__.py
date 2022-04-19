@@ -26,9 +26,9 @@ from . import log
 #
 # Helpers
 #
-logger = log.setup_custom_logger('root')
+logger = log.setup_custom_logger('root', streamLevel='INFO')
 
-VERSION = '3.3.2'
+VERSION = '3.3.3'
 
 
 class Exchange:
@@ -2008,7 +2008,7 @@ class WebSocket:
                 aiohttp.client_exceptions.ClientConnectorError
             ) as e:
                 self.logger.error(
-                    f'WebSocket connection {type(e).__name__}: {e}'
+                    f'WebSocket connection {e!r}'
                 )
                 retries -= 1
 
@@ -2064,10 +2064,15 @@ class WebSocket:
             consume = self._consume_derivatives
 
         while not self.ws.closed:
-            msg_json = await self.ws.receive_json()
-            await consume(msg_json)
+            try:
+                msg_json = await self.ws.receive_json()
+                await consume(msg_json)
 
-        raise WebSocketException(f'WebSocket {self.wsName} connection down')
+            # Handle EofStream (type 257)
+            except TypeError:
+                break
+
+        raise WebSocketException(f'WebSocket connection down')
 
     async def _consume_derivatives(self, msg: dict):
         """
@@ -2217,7 +2222,7 @@ class WebSocket:
         """
 
         self.logger.error(
-            f'WebSocket {self.wsName} encountered a {type(error).__name__}: {error}.'
+            f'WebSocket {self.wsName} encountered a {error!r}.'
         )
         await self.exit()
 
