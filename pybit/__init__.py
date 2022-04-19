@@ -28,7 +28,7 @@ from . import log
 #
 logger = log.setup_custom_logger('root', streamLevel='INFO')
 
-VERSION = '3.3.3'
+VERSION = '3.4.0'
 
 
 class Exchange:
@@ -285,6 +285,7 @@ class HTTP:
                 'my_position':                  '/v2/private/position/list',
                 'set_leverage':                 '/v2/private/position/leverage/save',
                 'cross_isolated_margin_switch': '/v2/private/position/switch-isolated',
+                'query_trading_fee_rate':       '/v2/private/position/fee-rate',
                 'position_mode_switch':         '/v2/private/position/switch-mode',
                 'full_partial_position_tp_sl_switch':   '/v2/private/tpsl/switch-mode',
                 'change_margin':                '/v2/private/position/change-position-margin',
@@ -1119,6 +1120,20 @@ class HTTP:
         return await self._submit_request(
             method='POST',
             path=self.url + self.endpoints['cross_isolated_margin_switch'],
+            query=kwargs,
+            auth=True
+        )
+
+    async def query_trading_fee_rate(self, **kwargs):
+        """
+        :param kwargs: See
+            https://bybit-exchange.github.io/docs/inverse/#t-queryfeerate.
+        :returns: Request results as dictionary.
+        """
+
+        return await self._submit_request(
+            method='POST',
+            path=self.url + self.endpoints['query_trading_fee_rate'],
             query=kwargs,
             auth=True
         )
