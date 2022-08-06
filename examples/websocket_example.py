@@ -85,6 +85,9 @@ async def main():
     async def position(msg):
         print(msg)
         
+    async def onError(err):
+        print(err)
+ 
     async with Exchange() as session:
         # Connect without authentication!
         ws = session.websocket(endpoint, subscriptions=subs)
@@ -101,7 +104,8 @@ async def main():
             endpoint,
             subscriptions=['position'],
             api_key='...',
-            api_secret='...'
+            api_secret='...',
+            error_cb_func=onError
         )
 
         # Bind position events stream to the position function.
