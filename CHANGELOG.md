@@ -5,11 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.0] - 2022-08-06
+
+### Added
+
+- Added new `clientSession` property in Exchange Class.
+- Added new `error_cb_func` parameter in WebSocket Class.
+- Added new `_on_subscribe()` function to WebSocket Class.
+- Added new `subscribed` property to WebSocket Class.
+
+### Modified
+
+- Minor changes to logging output.
+- Updated `ping_interval` in WebSocket Class.
+- Minor changes to `_connect()` function in WebSocket Class.
+- Changed `_emit()` and `_dispatch()` Exception handling in WebSocket Class.
+- Changed `_consume_derivatives()` and `_consume_spot_private()` Exception handling to use PermissionError.
+
 ## [3.4.0] - 2022-04-19
 
 ### Added
 
--Added new inverse 'query_trading_fee_rate' endpoint
+- Added new inverse `query_trading_fee_rate` endpoint
 
 ## [3.3.3] - 2022-04-19
 
@@ -18,9 +35,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added WS handling for type 257 EofStream events.
 - Minor changes to logging output.
 
-## [1.1.18 ~ 3.3.2] - 2022-04-19
+## [1.2.1 ~ 3.3.2] - 2022-04-19
 
 - See Commit descriptions for information on changes.
+
+## [1.2.0] - 2021-07-09
+
+### Added
+
+- Added new `HTTP` methods for new endpoints.
+- Added new paths for existing methods.
+
+### Modified
+
+- Fixed some old paths.
+
+### Deprecated
+
+- `is_linear` argument in `get_risk_limit()`.
+
+## [1.1.19] - 2021-06-15
+
+### Added
+
+- Added some logic to decide if there is 'order_book' in order book snapshot push for websocket.
 
 ## [1.1.18] - 2020-03-23
 
