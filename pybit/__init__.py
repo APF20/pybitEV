@@ -19,6 +19,7 @@ import time
 import hmac
 import asyncio
 import aiohttp
+import json
 
 from .exceptions import FailedRequestError, InvalidRequestError, WebSocketException
 from . import log
@@ -26,9 +27,9 @@ from . import log
 #
 # Helpers
 #
-logger = log.setup_custom_logger('root', streamLevel='INFO')
+LOGGER = log.setup_custom_logger('root', streamLevel='INFO')
 
-VERSION = '3.4.0'
+VERSION = '3.7.0'
 
 
 class Exchange:
@@ -38,7 +39,7 @@ class Exchange:
 
     def __init__(self):
         self.session = aiohttp.ClientSession()
-        self.logger = logger
+        self.logger = LOGGER
 
     async def __aenter__(self):
         return self
@@ -68,6 +69,10 @@ class Exchange:
         :returns: REST WebSocket Object.
         """
         return WebSocket(self.session, endpoint, **kwargs)
+
+    @property
+    def clientSession(self):
+        return self.session
 
 
 class HTTP:
@@ -147,7 +152,7 @@ class HTTP:
         self.url = 'https://api.bybit.com' if not endpoint else endpoint
 
         # Setup logger.
-        self.logger = logger
+        self.logger = LOGGER
         self.logger.info('Initializing HTTP session.')
         self.log_requests = log_requests
 
@@ -1832,7 +1837,7 @@ class HTTP:
                         request=f'{method} {path}: {req_params}',
                         message=s_json["ret_msg"],
                         status_code=s_json["ret_code"],
-                        time = time.strftime("%H:%M:%S", time.gmtime())
+                        time=time.strftime("%H:%M:%S", time.gmtime())
                     )
             else:
                 return s_json
@@ -1860,13 +1865,15 @@ class WebSocket:
         Pong timeout is based on ping_interval/2.
     :param restart_on_error: Whether or not the connection should restart on
         error.
+    :param error_cb_func: Callback function to bind to exception error
+        handling.
 
     :returns: WebSocket session.
     """
 
     def __init__(self, session, endpoint, api_key=None, api_secret=None,
-                 subscriptions=None, logging_level='INFO', ping_interval=30,
-                 restart_on_error=True):
+                 subscriptions=None, logging_level='INFO', ping_interval=20,
+                 restart_on_error=True, error_cb_func=None):
 
         """
         Initializes the websocket session.
@@ -1923,7 +1930,7 @@ class WebSocket:
         self.wsName = 'Authenticated' if api_key else 'Non-Authenticated'
 
         # Setup logger.
-        self.logger = logger
+        self.logger = LOGGER
         self.logger.info(f'Initializing {self.wsName} WebSocket.')
 
         # Set aiohttp client session.
@@ -1947,6 +1954,10 @@ class WebSocket:
 
         # Initialize handlers dictionary
         self.handlers = {}
+
+        # Bind error handler callback function
+        if error_cb_func:
+            self.bind('error_cb', error_cb_func)
 
         # Set initial state, initialize dictionary and connect.
         self._reset()
@@ -2026,15 +2037,15 @@ class WebSocket:
                     f'WebSocket connection {e!r}'
                 )
                 retries -= 1
+ 
+                # If connection was not successful, raise error.
+                if retries <= 0:
+                    raise WebSocketException(e)
 
             else:
                 break
 
             await asyncio.sleep(1)
-
-        # If connection was not successful, raise error.
-        if retries <= 0:
-             raise WebSocketException(e)
 
         # If given an api_key, authenticate.
         if self.api_key and self.api_secret:
@@ -2078,16 +2089,22 @@ class WebSocket:
         else:
             consume = self._consume_derivatives
 
-        while not self.ws.closed:
-            try:
-                msg_json = await self.ws.receive_json()
-                await consume(msg_json)
+        while True:
+            msg = await self.ws.receive()
 
-            # Handle EofStream (type 257)
-            except TypeError:
-                break
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                await consume(json.loads(msg.data))
 
-        raise WebSocketException(f'WebSocket connection down')
+            elif msg.type == aiohttp.WSMsgType.ERROR:
+                raise WebSocketException(f'WebSocket connection error. Code: {self.ws.close_code}; {msg}')
+
+            # Handle EofStream (type 257, etc)
+            elif msg.type in (
+                aiohttp.WSMsgType.CLOSE,
+                aiohttp.WSMsgType.CLOSING,
+                aiohttp.WSMsgType.CLOSED
+            ):
+                raise WebSocketException(f'WebSocket connection closed. Code: {self.ws.close_code}; {msg}')
 
     async def _consume_derivatives(self, msg: dict):
         """
@@ -2105,16 +2122,17 @@ class WebSocket:
                         self.logger.info('Authorization successful.')
 
                     elif msg['request']['op'] == 'subscribe':
-                        sub = msg['request']['args']
-                        self.logger.info(f'Subscription to {sub} successful.')
+                        topic = msg['request']['args']
+                        self._on_subscribe(topic)
+
             else:
                 if msg['request']['op'] == 'subscribe':
                     raise WebSocketException(f'Couldn\'t subscribe to topic.'
                                              f'Error: {msg["ret_msg"]}.')
 
                 elif msg['request']['op'] == 'auth':
-                    raise WebSocketException('Authorization failed. Please '
-                                             'check your API keys and restart.')
+                    raise PermissionError('Authorization failed. Please '
+                                          'check your API keys and restart.')
 
     async def _consume_spot_public(self, msg: dict):
         """
@@ -2123,8 +2141,8 @@ class WebSocket:
 
         # Spotv2 subscribe msg also has topic key, so we check it before topic.
         if 'msg' in msg and msg['msg'] == 'Success':
-                sub = self.spot_topic(msg)
-                self.logger.info(f'Subscription to {sub} successful.')
+                topic = self.spot_topic(msg)
+                self._on_subscribe(topic)
 
         elif 'topic' in msg:
             topic = self.spot_topic(msg)
@@ -2150,12 +2168,12 @@ class WebSocket:
             if msg['auth'] == 'success':
                 self.logger.info('Authorization successful.')
 
-                for s in self.subscriptions:
-                    self.logger.info(f'Subscription to {s} successful.')
+                for topic in self.subscriptions:
+                    self._on_subscribe(topic)
 
             else:
-                raise WebSocketException('Authorization failed. Please check '
-                                         'your API keys and restart.')
+                raise PermissionError('Authorization failed. Please '
+                                      'check your API keys and restart.')
 
         elif 'ping' in msg:
             pass
@@ -2205,10 +2223,7 @@ class WebSocket:
         :param topic: Required. Subscription topic.
         :param msg: Required. Message event json data.
         """
-        try:
-            await self.handlers[topic](msg)
-        except KeyError:
-            self.logger.warning(f'{topic} message event received has no binded function!')
+        await self.handlers[topic](msg)
 
     def bind(self, topic, func):
         """
@@ -2218,7 +2233,7 @@ class WebSocket:
         :param func: Required. Callback Function to handle processing of events.
         """
         if not asyncio.iscoroutinefunction(func):
-            raise ValueError('Binded handler must be coroutine function!')
+            raise ValueError(f'Binded handler {func} must be coroutine function!')
 
         # Bind function handler to topic events.
         self.handlers[topic] = func
@@ -2236,10 +2251,14 @@ class WebSocket:
         Exit on errors and raise exception, or attempt reconnect.
         """
 
+        t = time.strftime("%H:%M:%S", time.gmtime())
         self.logger.error(
-            f'WebSocket {self.wsName} encountered a {error!r}.'
+            f'WebSocket {self.wsName} encountered a {error!r} (ErrTime: {t} UTC).'
         )
         await self.exit()
+
+        if 'error_cb' in self.handlers:
+            await self._emit('error_cb', error)
 
         # Reconnect.
         if self.handle_error:
@@ -2259,12 +2278,24 @@ class WebSocket:
         self.logger.info(f'WebSocket {self.wsName} closed.')
         await self.exit()
 
+    def _on_subscribe(self, topic):
+        """
+        Log and store WS subscription successes.
+        """
+        self.logger.info(f'Subscription to {topic} successful.')
+        self._subscribed.append(topic)
+
+    @property
+    def subscribed(self):
+        return self._subscribed
+
     def _reset(self):
         """
         Set state booleans and initialize dictionary.
         """
         self.exited = False
         self.ws = None
+        self._subscribed = []
 
     async def run_forever(self):
         self.logger.debug(f'WebSocket {self.wsName} starting stream.')
@@ -2288,9 +2319,13 @@ class WebSocket:
             except WebSocketException as e:
                 await self._on_error(e)
 
-            finally:
+            except PermissionError as e:
+                self.handle_error = False
+                await self._on_error(e)
+
+           finally:
                 if self.exited:
                     await self._on_close()
                     break
 
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.01)
