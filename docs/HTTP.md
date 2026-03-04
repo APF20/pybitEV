@@ -4,7 +4,7 @@ Available methods for the HTTP module of `pybit`.
 ## Public Endpoints
 
 ```python
-def orderbook(self, **kwargs):
+async def orderbook(self, **kwargs):
     """
     Get the orderbook.
 
@@ -12,8 +12,17 @@ def orderbook(self, **kwargs):
         https://bybit-exchange.github.io/docs/inverse/#t-orderbook.
     :returns: Request results as dictionary.
     """
+    
+async def merged_orderbook(self, **kwargs):
+    """
+    Get the merged orderbook.
 
-def query_kline(self, **kwargs):
+    :param kwargs: See
+        https://bybit-exchange.github.io/docs/spot/#t-mergedorderbook.
+    :returns: Request results as dictionary.
+    """
+
+async def query_kline(self, **kwargs):
     """
     Get kline.
 
@@ -22,7 +31,7 @@ def query_kline(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def latest_information_for_symbol(self, **kwargs):
+async def latest_information_for_symbol(self, **kwargs):
     """
     Get the latest information for symbol.
 
@@ -31,7 +40,25 @@ def latest_information_for_symbol(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def public_trading_records(self, **kwargs):
+async def last_traded_price(self, **kwargs):
+    """
+    Get the last traded price for symbol.
+
+    :param kwargs: See
+        https://bybit-exchange.github.io/docs/spot/#t-lasttradedprice.
+    :returns: Request results as dictionary.
+    """
+
+async def best_bid_ask_price(self, **kwargs):
+    """
+    Get the best bid and ask prices and quantities for symbol.
+
+    :param kwargs: See
+        https://bybit-exchange.github.io/docs/spot/#t-bestbidask.
+    :returns: Request results as dictionary.
+    """
+
+async def public_trading_records(self, **kwargs):
     """
     Get recent trades. You can find a complete history of trades on Bybit
     at https://public.bybit.com/.
@@ -41,7 +68,7 @@ def public_trading_records(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def query_symbol(self):
+async def query_symbol(self):
     """
     Get symbol info.
 
@@ -50,15 +77,15 @@ def query_symbol(self):
 
 def liquidated_orders(self, **kwargs):
     """
-    Retrieve the liquidated orders. The query range is the last seven days
-    of data.
+    ABANDONED! Please use liquidation websocket instead. Retrieve the
+    liquidated orders. The query range is the last seven days of data.
 
     :param kwargs: See
         https://bybit-exchange.github.io/docs/inverse/#t-query_liqrecords.
     :returns: Request results as dictionary.
     """
 
-def query_mark_price_kline(self, **kwargs):
+async def query_mark_price_kline(self, **kwargs):
     """
     Query mark price kline (like query_kline but for mark price).
 
@@ -67,7 +94,7 @@ def query_mark_price_kline(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def query_index_price_kline(self, **kwargs):
+async def query_index_price_kline(self, **kwargs):
     """
     Query index price kline (like query_kline but for index price).
     :param kwargs: See
@@ -75,7 +102,7 @@ def query_index_price_kline(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def query_premium_index_kline(self, **kwargs):
+async def query_premium_index_kline(self, **kwargs):
     """
     Query premium index kline (like query_kline but for the premium index
     discount).
@@ -84,7 +111,7 @@ def query_premium_index_kline(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def open_interest(self, **kwargs):
+async def open_interest(self, **kwargs):
     """
     Gets the total amount of unsettled contracts. In other words, the total
     number of contracts held in open positions.
@@ -94,7 +121,7 @@ def open_interest(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def latest_big_deal(self, **kwargs):
+async def latest_big_deal(self, **kwargs):
     """
     Obtain filled orders worth more than 500,000 USD within the last 24h.
 
@@ -103,7 +130,7 @@ def latest_big_deal(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def long_short_ratio(self, **kwargs):
+async def long_short_ratio(self, **kwargs):
     """
     Gets the Bybit long-short ratio.
 
@@ -112,14 +139,14 @@ def long_short_ratio(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def server_time(self):
+async def server_time(self):
     """
     Get Bybit server time.
 
     :returns: Request results as dictionary.
     """
 
-def announcement(self):
+async def announcement(self):
     """
     Get Bybit OpenAPI announcements in the last 30 days by reverse order.
 
@@ -130,7 +157,7 @@ def announcement(self):
 ## Private Endpoints
 
 ```python
-def place_active_order(self, **kwargs):
+async def place_active_order(self, **kwargs):
     """
     Places an active order. For more information, see
     https://bybit-exchange.github.io/docs/inverse/#t-activeorders.
@@ -140,7 +167,7 @@ def place_active_order(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def get_active_order(self, **kwargs):
+async def get_active_order(self, **kwargs):
     """
     Gets an active order. For more information, see
     https://bybit-exchange.github.io/docs/inverse/#t-getactive.
@@ -150,7 +177,7 @@ def get_active_order(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def cancel_active_order(self, **kwargs):
+async def cancel_active_order(self, **kwargs):
     """
     Cancels an active order. For more information, see
     https://bybit-exchange.github.io/docs/inverse/#t-cancelactive.
@@ -160,7 +187,16 @@ def cancel_active_order(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def cancel_all_active_orders(self, **kwargs):
+async def fast_cancel_active_order(self, **kwargs):
+    """
+    Cancels an active order.
+
+    :param kwargs: See
+        https://bybit-exchange.github.io/docs/spot/#t-fastcancelactiveorder.
+    :returns: Request results as dictionary.
+    """
+
+async def cancel_all_active_orders(self, **kwargs):
     """
     Cancel all active orders that are unfilled or partially filled. Fully
     filled orders cannot be cancelled.
@@ -170,16 +206,7 @@ def cancel_all_active_orders(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def fast_cancel_active_order(self, **kwargs):
-    """
-    Fast cancels an active order.
-
-    :param kwargs: See
-        https://bybit-exchange.github.io/docs/spot/#t-fastcancelactiveorder.
-    :returns: Request results as dictionary.
-    """
-
-def batch_cancel_active_order(self, **kwargs):
+async def batch_cancel_active_order(self, **kwargs):
     """
     Batch cancels active orders.
 
@@ -189,7 +216,7 @@ def batch_cancel_active_order(self, **kwargs):
     """
 
     
-def batch_fast_cancel_active_order(self, **kwargs):
+async def batch_fast_cancel_active_order(self, **kwargs):
     """
     Batch fast cancels active orders.
 
@@ -198,7 +225,7 @@ def batch_fast_cancel_active_order(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def batch_cancel_active_order_by_ids(self, **kwargs):
+async def batch_cancel_active_order_by_ids(self, **kwargs):
     """
     Batch cancels active order by ids.
 
@@ -207,7 +234,7 @@ def batch_cancel_active_order_by_ids(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def replace_active_order(self, **kwargs):
+async def replace_active_order(self, **kwargs):
     """
     Replace order can modify/amend your active orders.
 
@@ -216,16 +243,36 @@ def replace_active_order(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def query_active_order(self, **kwargs):
+async def query_active_order(self, **kwargs):
     """
-    Query real-time active order information.
+    Query real-time active order information. For spot contracts
+        use get_active_order() or open_orders() as 'orderId' param
+        is optionally used as a filter for both functions.
 
     :param kwargs: See
         https://bybit-exchange.github.io/docs/inverse/#t-queryactive.
     :returns: Request results as dictionary.
     """
 
-def place_conditional_order(self, **kwargs):
+async def open_orders(self, **kwargs):
+    """
+    Get open active order information.
+
+    :param kwargs: See
+        https://bybit-exchange.github.io/docs/spot/#t-openorders.
+    :returns: Request results as dictionary.
+    """
+
+async def order_history(self, **kwargs):
+    """
+    Get order history information.
+
+    :param kwargs: See
+        https://bybit-exchange.github.io/docs/spot/#t-orderhistory.
+    :returns: Request results as dictionary.
+    """
+
+async def place_conditional_order(self, **kwargs):
     """
     Places a conditional order. For more information, see
     https://bybit-exchange.github.io/docs/inverse/#t-placecond.
@@ -235,7 +282,7 @@ def place_conditional_order(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def get_conditional_order(self, **kwargs):
+async def get_conditional_order(self, **kwargs):
     """
     Gets a conditional order. For more information, see
     https://bybit-exchange.github.io/docs/inverse/#t-getcond.
@@ -245,7 +292,7 @@ def get_conditional_order(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def cancel_conditional_order(self, **kwargs):
+async def cancel_conditional_order(self, **kwargs):
     """
     Cancels a conditional order. For more information, see
     https://bybit-exchange.github.io/docs/inverse/#t-cancelcond.
@@ -255,7 +302,7 @@ def cancel_conditional_order(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def cancel_all_conditional_orders(self, **kwargs):
+async def cancel_all_conditional_orders(self, **kwargs):
     """
     Cancel all conditional orders that are unfilled or partially filled.
     Fully filled orders cannot be cancelled.
@@ -265,7 +312,7 @@ def cancel_all_conditional_orders(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def replace_conditional_order(self, **kwargs):
+async def replace_conditional_order(self, **kwargs):
     """
     Replace conditional order can modify/amend your conditional orders.
 
@@ -274,7 +321,7 @@ def replace_conditional_order(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def query_conditional_order(self, **kwargs):
+async def query_conditional_order(self, **kwargs):
     """
     Query real-time conditional order information.
 
@@ -283,7 +330,7 @@ def query_conditional_order(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def my_position(self, **kwargs):
+async def my_position(self, **kwargs):
     """
     Get my position list.
 
@@ -292,7 +339,7 @@ def my_position(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def set_auto_add_margin(self, **kwargs):
+async def set_auto_add_margin(self, **kwargs):
     """
     For linear markets only. Set auto add margin, or Auto-Margin
     Replenishment.
@@ -302,7 +349,7 @@ def set_auto_add_margin(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def set_leverage(self, **kwargs):
+async def set_leverage(self, **kwargs):
     """
     For linear markets only. Change user leverage.
 
@@ -311,7 +358,7 @@ def set_leverage(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def cross_isolated_margin_switch(self, **kwargs):
+async def cross_isolated_margin_switch(self, **kwargs):
     """
     Switch Cross/Isolated; must be leverage value when switching from Cross
     to Isolated.
@@ -321,7 +368,14 @@ def cross_isolated_margin_switch(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def position_mode_switch(self, **kwargs):
+async def query_trading_fee_rate(self, **kwargs):
+    """
+    :param kwargs: See
+        https://bybit-exchange.github.io/docs/inverse/#t-queryfeerate.
+    :returns: Request results as dictionary.
+    """
+
+async def position_mode_switch(self, **kwargs):
     """
     If you are in One-Way Mode, you can only open one position on Buy or
     Sell side;
@@ -333,7 +387,7 @@ def position_mode_switch(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def full_partial_position_tp_sl_switch(self, **kwargs):
+async def full_partial_position_tp_sl_switch(self, **kwargs):
     """
     Switch mode between Full or Partial
 
@@ -342,7 +396,7 @@ def full_partial_position_tp_sl_switch(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def change_margin(self, **kwargs):
+async def change_margin(self, **kwargs):
     """
     Update margin.
 
@@ -351,7 +405,7 @@ def change_margin(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def set_trading_stop(self, **kwargs):
+async def set_trading_stop(self, **kwargs):
     """
     Set take profit, stop loss, and trailing stop for your open position.
 
@@ -360,7 +414,7 @@ def set_trading_stop(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def add_reduce_margin(self, **kwargs):
+async def add_reduce_margin(self, **kwargs):
     """
     For linear markets only. Add margin.
 
@@ -369,7 +423,7 @@ def add_reduce_margin(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def user_leverage(self, **kwargs):
+async def user_leverage(self, **kwargs):
     """
     Get user leverage.
 
@@ -378,7 +432,7 @@ def user_leverage(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def change_user_leverage(self, **kwargs):
+async def change_user_leverage(self, **kwargs):
     """
     Change user leverage.
 
@@ -387,7 +441,7 @@ def change_user_leverage(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def user_trade_records(self, **kwargs):
+async def user_trade_records(self, **kwargs):
     """
     Get user's trading records. The results are ordered in ascending order
     (the first item is the oldest).
@@ -397,7 +451,7 @@ def user_trade_records(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def closed_profit_and_loss(self, **kwargs):
+async def closed_profit_and_loss(self, **kwargs):
     """
     Get user's closed profit and loss records. The results are ordered in
     descending order (the first item is the latest).
@@ -407,7 +461,7 @@ def closed_profit_and_loss(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def get_risk_limit(self, **kwargs):
+async def get_risk_limit(self, **kwargs):
     """
     Get risk limit.
 
@@ -416,7 +470,7 @@ def get_risk_limit(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def set_risk_limit(self, **kwargs):
+async def set_risk_limit(self, **kwargs):
     """
     Set risk limit.
 
@@ -425,7 +479,7 @@ def set_risk_limit(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def get_the_last_funding_rate(self, **kwargs):
+async def get_the_last_funding_rate(self, **kwargs):
     """
     The funding rate is generated every 8 hours at 00:00 UTC, 08:00 UTC and
     16:00 UTC. For example, if a request is sent at 12:00 UTC, the funding
@@ -436,7 +490,7 @@ def get_the_last_funding_rate(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def my_last_funding_fee(self, **kwargs):
+async def my_last_funding_fee(self, **kwargs):
     """
     Funding settlement occurs every 8 hours at 00:00 UTC, 08:00 UTC and
     16:00 UTC. The current interval's fund fee settlement is based on the
@@ -449,7 +503,7 @@ def my_last_funding_fee(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def predicted_funding_rate(self, **kwargs):
+async def predicted_funding_rate(self, **kwargs):
     """
     Get predicted funding rate and my funding fee.
 
@@ -458,14 +512,14 @@ def predicted_funding_rate(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def api_key_info(self):
+async def api_key_info(self):
     """
     Get user's API key info.
 
     :returns: Request results as dictionary.
     """
 
-def lcp_info(self, **kwargs):
+async def lcp_info(self, **kwargs):
     """
     Get user's LCP (data refreshes once an hour). Only supports inverse
     perpetual at present. See
@@ -477,7 +531,7 @@ def lcp_info(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def get_wallet_balance(self, **kwargs):
+async def get_wallet_balance(self, **kwargs):
     """
     Get wallet balance info.
 
@@ -486,7 +540,7 @@ def get_wallet_balance(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def wallet_fund_records(self, **kwargs):
+async def wallet_fund_records(self, **kwargs):
     """
     Get wallet fund records. This endpoint also shows exchanges from the
     Asset Exchange, where the types for the exchange are
@@ -497,7 +551,7 @@ def wallet_fund_records(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def withdraw_records(self, **kwargs):
+async def withdraw_records(self, **kwargs):
     """
     Get withdrawal records.
 
@@ -506,7 +560,7 @@ def withdraw_records(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def asset_exchange_records(self, **kwargs):
+async def asset_exchange_records(self, **kwargs):
     """
     Get asset exchange records.
 
@@ -515,7 +569,7 @@ def asset_exchange_records(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def create_internal_transfer(self, **kwargs):
+async def create_internal_transfer(self, **kwargs):
     """
     Create internal transfer.
 
@@ -524,7 +578,7 @@ def create_internal_transfer(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def create_subaccount_transfer(self, **kwargs):
+async def create_subaccount_transfer(self, **kwargs):
     """
     Create internal transfer.
 
@@ -533,7 +587,7 @@ def create_subaccount_transfer(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def query_transfer_list(self, **kwargs):
+async def query_transfer_list(self, **kwargs):
     """
     Create internal transfer.
 
@@ -542,7 +596,7 @@ def query_transfer_list(self, **kwargs):
     :returns: Request results as dictionary.
     """
 
-def query_subaccount_list(self):
+async def query_subaccount_list(self):
     """
     Create internal transfer.
 
@@ -551,7 +605,7 @@ def query_subaccount_list(self):
     :returns: Request results as dictionary.
     """
 
-def query_subaccount_transfer_list(self,**kwargs):
+async def query_subaccount_transfer_list(self,**kwargs):
     """
     Create internal transfer.
 
@@ -564,7 +618,7 @@ def query_subaccount_transfer_list(self,**kwargs):
 ## Custom Methods
 
 ```python
-def close_position(self, symbol):
+async def close_position(self, symbol):
     """
     Closes your open position. Makes two requests (position, order).
 
@@ -574,9 +628,9 @@ def close_position(self, symbol):
 
     """
 
-def place_active_order_bulk(self, orders: list, max_in_parallel=10):
+async def place_active_order_bulk(self, orders: list, max_in_parallel=10):
     """
-    Places multiple active orders in bulk using multithreading. For more
+    Places multiple active orders in bulk using async concurrency. For more
     information on place_active_order, see
     https://bybit-exchange.github.io/docs/inverse/#t-activeorders.
 
@@ -586,9 +640,9 @@ def place_active_order_bulk(self, orders: list, max_in_parallel=10):
     :returns: Future request result dictionaries as a list.
     """
 
-def cancel_active_order_bulk(self, orders: list, max_in_parallel=10):
+async def cancel_active_order_bulk(self, orders: list, max_in_parallel=10):
     """
-    Cancels multiple active orders in bulk using multithreading. For more
+    Cancels multiple active orders in bulk using async concurrency. For more
     information on cancel_active_order, see
     https://bybit-exchange.github.io/docs/inverse/#t-activeorders.
 
@@ -598,9 +652,9 @@ def cancel_active_order_bulk(self, orders: list, max_in_parallel=10):
     :returns: Future request result dictionaries as a list.
     """
 
-def replace_active_order_bulk(self, orders: list, max_in_parallel=10):
+async def replace_active_order_bulk(self, orders: list, max_in_parallel=10):
     """
-    Replaces multiple active orders in bulk using multithreading. For more
+    Replaces multiple active orders in bulk using async concurrency. For more
     information on replace_active_order, see
     https://bybit-exchange.github.io/docs/inverse/#t-replaceactive.
 
@@ -610,9 +664,9 @@ def replace_active_order_bulk(self, orders: list, max_in_parallel=10):
     :returns: Future request result dictionaries as a list.
     """
 
-def place_conditional_order_bulk(self, orders: list, max_in_parallel=10):
+async def place_conditional_order_bulk(self, orders: list, max_in_parallel=10):
     """
-    Places multiple conditional orders in bulk using multithreading. For
+    Places multiple conditional orders in bulk using async concurrency. For
     more information on place_active_order, see
     https://bybit-exchange.github.io/docs/inverse/#t-placecond.
 
@@ -622,9 +676,9 @@ def place_conditional_order_bulk(self, orders: list, max_in_parallel=10):
     :returns: Future request result dictionaries as a list.
     """
 
-def cancel_conditional_order_bulk(self, orders: list, max_in_parallel=10):
+async def cancel_conditional_order_bulk(self, orders: list, max_in_parallel=10):
     """
-    Cancels multiple conditional orders in bulk using multithreading. For
+    Cancels multiple conditional orders in bulk using async concurrency. For
     more information on cancel_active_order, see
     https://bybit-exchange.github.io/docs/inverse/#t-cancelcond.
 
@@ -634,9 +688,9 @@ def cancel_conditional_order_bulk(self, orders: list, max_in_parallel=10):
     :returns: Future request result dictionaries as a list.
     """
 
-def replace_conditional_order_bulk(self, orders: list, max_in_parallel=10):
+async def replace_conditional_order_bulk(self, orders: list, max_in_parallel=10):
     """
-    Replaces multiple conditional orders in bulk using multithreading. For
+    Replaces multiple conditional orders in bulk using async concurrency. For
     more information on replace_active_order, see
     https://bybit-exchange.github.io/docs/inverse/#t-replacecond.
 
