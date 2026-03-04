@@ -84,17 +84,17 @@ async def main():
 
     async def position(msg):
         print(msg)
-        
+
     async def onError(err):
         print(err)
- 
+
     async with Exchange() as session:
         # Connect without authentication!
         ws = session.websocket(endpoint, subscriptions=subs)
-        
+
         # Let's bind orderbook events to the orderBook function
         ws.bind('orderBookL2_25.BTCUSD', orderBook)
-        
+
         # Let's bind all instrument events to the instruments function
         ws.bind('instrument_info.100ms.BTCUSD', instruments)
         ws.bind('instrument_info.100ms.ETHUSD', instruments)
@@ -149,12 +149,12 @@ async def main():
     async with Exchange() as session:
         # Connect without authentication!
         ws = session.websocket(endpoint, subscriptions=subs)
-        
+
         # Let's bind depth events to the depth function
         # ** Note the use of canonical topic names for binding!
         # See WebSocket().spot_topic() method for spot topic details.
         ws.bind('depthV2.ETHUSDT', depth)
-        
+
         # Let's bind kline 1m events to the kline function
         ws.bind('klineV2.1m.ETHUSDT', kline)
 
