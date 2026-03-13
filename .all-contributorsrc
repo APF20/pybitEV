@@ -7,10 +7,10 @@
   "contributors": [
     {
     
-      "login": "verata-veritatis",
-      "name": "verata-veritatis",
-      "avatar_url": "https://avatars0.githubusercontent.com/u/9677388?v=4",
-      "profile": "https://github.com/verata-veritatis",
+      "login": "APF20",
+      "name": "APF20",
+      "avatar_url": "https://avatars0.githubusercontent.com/u/74583612?v=4",
+      "profile": "https://github.com/APF20",
       "contributions": [
         "code",
         "doc"
@@ -19,8 +19,8 @@
     }
   ],
   "contributorsPerLine": 7,
-  "projectName": "pybit",
-  "projectOwner": "verata-veritatis",
+  "projectName": "pybitEV",
+  "projectOwner": "APF20",
   "repoType": "github",
   "repoHost": "https://github.com",
   "skipCi": true
