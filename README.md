@@ -117,7 +117,7 @@ This project follows the [all-contributors](https://github.com/all-contributors/
 I work on `pybit` in my spare time. If you like the project and want to donate, you can do so to the following addresses:
 
 ```
-XTZ:
-BTC:
-ETH:
+SOL: HoUMsBKUESB9fsVTNtT4jYGnAzTAH9LNpZHjXvPiZ5Tb
+BTC: bc1q4y230tg3rrhty9zxwpm63g5sgaqxw83xuwahjk
+ETH: 0x06fd9aad799c5f094ce8c941fae9b81967cd8323
 ```
