@@ -21,8 +21,13 @@ Python3 API connector for Bybit's HTTP and Websockets APIs.
 - [Donations](#donations)
 
 ## About
-`PybitEV` is a hard fork of the original Pybit project, upgraded with asyncronous support
-using the built in asyncio library and the aiohttp library.
+Put simply, `PybitEV` is a hard fork of the original Pybit project, upgraded with fast asyncronous support, using the built in `asyncio` library and the `aiohttp` library. `pybitEV` (Python + Bybit) is a lightweight one-stop-shop module for the Bybit REST HTTP and WebSocket APIs.
+
+I was personally never a fan of auto-generated connectors that used a mosh-pit of 
+various modules you didn't want (sorry, `bravado`) and wanted to build my own 
+Python3-dedicated connector with very little external resources. The goal of the 
+connector is to provide traders and developers with an easy-to-use high-performing 
+module that has an active issue and discussion board leading to consistent improvements.
 
 ## Development
 After considerable contributions to the original pybit `community` project, I decided to
